@@ -1,90 +1,161 @@
-StreamFi Backend Service
-The StreamFi Backend powers the StreamFi platform — a Web3 streaming and monetization service.
-It is built with Node.js, TypeScript, Express, and Socket.IO to handle API requests, user management, real-time interactions, and business logic.
+# StreamFi Backend
 
-🚀 Features
-Modular Architecture – Organized by feature modules (Auth, Monetization, Streams, etc.).
+A modern, modular Node.js backend for the **StreamFi** platform, built with **TypeScript, Express, Prisma, and Socket.IO**.
+It provides a robust API for authentication, stream management, monetization, and delivers real-time events for an interactive user experience.
 
-RESTful API – Comprehensive endpoints for all platform features.
+---
 
-Real-time Communication – Live stream interactions (e.g., reactions) via Socket.IO.
+## 📝 Overview
 
-Database Integration – Uses Prisma ORM with PostgreSQL.
+* **Runtime:** Node.js (v18+)
+* **Language:** TypeScript
+* **Framework:** Express.js
+* **Database ORM:** Prisma
+* **Real-time:** Socket.IO
+* **Database:** PostgreSQL
+* **Containerization:** Docker & Docker Compose
+* **Architecture:** Feature-based modules under `src/modules/*`
 
-Type-Safe Development – Fully written in TypeScript.
+---
 
-Containerized – Ready for deployment with Docker & Docker Compose.
+## 📂 Folder Structure
 
-Linting & Formatting – Ensures clean, consistent code using ESLint & Prettier.
+```
+backend/
+├── prisma/
+│   ├── schema.prisma          # Database models and relations
+│   └── migrations/            # Generated SQL migration files
+├── src/
+│   ├── app.ts                 # Express app setup and middleware
+│   ├── server.ts              # Main entry point
+│   ├── config/
+│   │   └── environment.ts     # Environment variables validation
+│   ├── lib/
+│   │   └── prisma.ts          # Prisma Client instance
+│   ├── modules/
+│   │   ├── auth/              # User registration and login
+│   │   ├── monetization/      # Donations, NFT sales, and payouts
+│   │   ├── notifications/     # User notifications
+│   │   ├── stream/            # Stream key generation and management
+│   │   └── users/             # User profile management
+│   ├── routes/
+│   │   └── index.ts           # Centralized API routes
+│   └── utils/                 # Helper utilities
+├── tests/                     # Unit and integration tests
+├── .env.example               # Example environment variables
+├── Dockerfile                 # Docker image build file
+├── docker-compose.yml         # Orchestration for services
+├── package.json               # Dependencies and scripts
+└── tsconfig.json              # TypeScript configuration
+```
 
-🛠 Tech Stack
-Runtime: Node.js (v20)
+---
 
-Language: TypeScript
+## 🚀 Getting Started
 
-Framework: Express.js
+### 1. Clone the Repository
 
-Real-time Engine: Socket.IO
+```bash
+git clone https://github.com/your-org/streamfi-backend.git
+cd streamfi-backend
+```
 
-Database: PostgreSQL
+### 2. Install Dependencies
 
-ORM: Prisma
+```bash
+npm install
+```
 
-Containerization: Docker & Docker Compose
+### 3. Environment Variables
 
-Tooling: ESLint & Prettier
+Copy `.env.example` → `.env` and configure:
 
-⚡ Getting Started
-Prerequisites
-Docker installed and running
-
-Docker Compose (comes with Docker Desktop)
-
-1. Environment Setup
-Create a .env file inside the streamfi-backend/ directory:
-
-bash
-Copy code
+```bash
 cp .env.example .env
-Update the .env file with your database credentials (these should match the db service in your root docker-compose.yml):
+```
 
-env
-Copy code
-PORT=8000
-DATABASE_URL="postgresql://user:password@db:5432/streamfi?schema=public"
-2. Run the Application
-From the project root (where the main docker-compose.yml lives), run:
+Update database connection and JWT secrets.
 
-bash
-Copy code
-docker compose up --build
-This will:
+### 4. Run Database Migrations
 
-Build and start all services
+```bash
+npx prisma migrate dev
+```
 
-Expose the backend service on the configured PORT (default: 8000)
+### 5. Start the Development Server
 
-Stream logs to your terminal
+```bash
+npm run dev
+```
 
-🗄 Database Management with Prisma
-StreamFi uses Prisma Migrate for database schema changes.
+---
 
-Create a New Migration
-Ensure Docker containers are running:
+## 🛠️ Available Scripts
 
-bash
-Copy code
-docker compose up
-In a new terminal, run:
+* `npm run dev` – Start in development mode with hot reload
+* `npm run build` – Build TypeScript code for production
+* `npm run start` – Start compiled production server
+* `npm run lint` – Run ESLint checks
+* `npm run test` – Run tests
 
-bash
-Copy code
-docker compose exec backend npx prisma migrate dev --name <migration-name>
-Replace <migration-name> with something descriptive, e.g., add-stream-thumbnail.
+---
 
-Seed the Database
-To populate the database with initial data:
+## 🔑 Core Features
 
-bash
-Copy code
-docker compose exec backend npx prisma db seed
+* **Authentication & Authorization** – Secure login/registration with JWT
+* **Stream Management** – Stream key generation, session handling
+* **Real-Time Events** – Live chat and notifications via Socket.IO
+* **Monetization** – Support for donations, NFT-based monetization
+* **User Profiles** – Manage accounts, settings, and metadata
+
+---
+
+## 🐳 Docker Setup
+
+Build and run using Docker Compose:
+
+```bash
+docker-compose up --build
+```
+
+---
+
+## 📖 API Documentation
+
+The backend exposes REST + WebSocket APIs.
+Detailed Swagger/OpenAPI docs are available at:
+
+```
+http://localhost:4000/api/docs
+```
+
+---
+
+## ✅ Testing
+
+Run tests with:
+
+```bash
+npm run test
+```
+
+Tests include:
+
+* Unit tests (Jest)
+* Integration tests with Supertest
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo
+2. Create a new branch (`feature/your-feature`)
+3. Commit your changes
+4. Push to your fork
+5. Open a PR
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License.
