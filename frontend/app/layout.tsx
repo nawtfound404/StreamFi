@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/providers/theme-provider";
-import { AuthGate } from "@/components/auth-gate";
-import { AppSidebar } from "@/components/app-sidebar";
+import { ThemeProvider } from "../providers/theme-provider";
+import { AuthGate } from "../components/auth-gate";
+import { AppSidebar } from "../components/app-sidebar";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import { AppBreadcrumbs } from "@/components/breadcrumbs";
+} from "../components/ui/sidebar";
+import { Separator } from "../components/ui/separator";
+import { AppBreadcrumbs } from "../components/breadcrumbs";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

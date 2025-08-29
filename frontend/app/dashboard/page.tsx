@@ -1,27 +1,12 @@
 "use client"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AppSidebar } from "@/components/app-sidebar"
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
-import { Separator } from "@/components/ui/separator"
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar"
 
-import { useAuthStore } from "@/stores/auth-store"
-import { monetization, type Donation } from "@/modules/monetization"
-import { analytics } from "@/modules/analytics"
-import { Card } from "@/components/ui/card"
-
+import { useAuthStore } from "../../stores/auth-store"
+import { monetization, type Donation } from "../../modules/monetization"
+import { analytics } from "../../modules/analytics"
+import { Card } from "../../components/ui/card"
+import Link from 'next/link'
 export default function Page() {
   const session = useAuthStore((s) => s.session)
   const router = useRouter()
@@ -77,7 +62,7 @@ export default function Page() {
               <div className="flex flex-wrap gap-2">
                 <a href="/dashboard/monetization" className="px-3 py-2 rounded-md border hover:bg-muted text-sm">Go to Monetization</a>
                 <a href="/dashboard/settings" className="px-3 py-2 rounded-md border hover:bg-muted text-sm">Open Settings</a>
-                <a href="/streams" className="px-3 py-2 rounded-md border hover:bg-muted text-sm">Browse Streams</a>
+                <Link href="/streams" className="px-3 py-2 rounded-md border hover:bg-muted text-sm">Browse Streams</Link>
               </div>
             </Card>
             <Card className="p-4">

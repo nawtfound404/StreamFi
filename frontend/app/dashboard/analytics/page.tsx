@@ -1,8 +1,8 @@
 "use client"
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useAuthStore } from "@/stores/auth-store"
-import { Card } from "@/components/ui/card"
+import { useAuthStore } from "../../../stores/auth-store"
+import { Card } from "../../../components/ui/card"
 
 export default function AnalyticsPage() {
   const session = useAuthStore((s) => s.session)

@@ -1,12 +1,12 @@
 "use client"
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { useAuthStore } from "@/stores/auth-store"
-import { monetization, type Donation, type NFTSale, type Payout } from "@/modules/monetization"
-import { Card } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { useAuthStore } from "../../../stores/auth-store"
+import { monetization, type Donation, type NFTSale, type Payout } from "../../../modules/monetization"
+import { Card } from "../../../components/ui/card"
+import { Separator } from "../../../components/ui/separator"
+import { Input } from "../../../components/ui/input"
+import { Button } from "../../../components/ui/button"
 
 export default function MonetizationPage() {
   const session = useAuthStore((s) => s.session)

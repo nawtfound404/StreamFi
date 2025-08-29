@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import { getSummary, getDonations, getNfts, getPayouts } from './monetization.controller';
+import { authMiddleware } from '../../middlewares/auth.middleware';
+const router = Router();
+router.use(authMiddleware);
+router.get('/summary', getSummary);
+router.get('/donations', getDonations);
+router.get('/nfts', getNfts);
+router.get('/payouts', getPayouts);
+export default router;

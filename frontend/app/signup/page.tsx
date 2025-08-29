@@ -1,11 +1,11 @@
 "use client"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { auth } from "@/modules/auth"
-import { useAuthStore } from "@/stores/auth-store"
+import { Button } from "../../components/ui/button"
+import { Input } from "../../components/ui/input"
+import { Label } from "../../components/ui/label"
+import { auth } from "../../modules/auth"
+import { useAuthStore } from "../../stores/auth-store"
 
 export default function SignupPage() {
   const router = useRouter()
