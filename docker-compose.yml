@@ -1,0 +1,52 @@
+# StreamFi/docker-compose.yml
+
+version: '3.8'
+
+services:
+  # Backend Service
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: "postgresql://user:password@db:5432/streamfi?schema=public"
+    networks:
+      - streamfi-net
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      # Pass the build argument to the frontend Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: http://backend:8000/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - streamfi-net
+
+  # Database Service
+  db:
+    image: postgres:14-alpine
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: streamfi
+    networks:
+      - streamfi-net
+
+networks:
+  streamfi-net:
+    driver: bridge
+
+volumes:
+  postgres_data:

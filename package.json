@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsconfig-paths": "^4.2.0"
+  }
+}

@@ -1,10 +1,10 @@
 "use client"
 import { useState } from "react"
-import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { streaming } from "@/modules/streaming"
+import { Card } from "../../../components/ui/card"
+import { Button } from "../../../components/ui/button"
+import { Input } from "../../../components/ui/input"
+import { Label } from "../../../components/ui/label"
+import { streaming } from "../../../modules/streaming"
 
 export default function SettingsPage() {
   const [displayName, setDisplayName] = useState("Streamer")

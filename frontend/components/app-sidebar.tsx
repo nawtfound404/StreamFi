@@ -3,17 +3,17 @@
 import * as React from "react"
 import { Tv, LayoutDashboard, Shield, Settings, DollarSign, Home } from "lucide-react"
 
-import { NavMain } from "@/components/nav-main"
+import { NavMain } from "../components/nav-main"
 // import { NavProjects } from "@/components/nav-projects"
-import { NavUser } from "@/components/nav-user"
-import { useAuthStore } from "@/stores/auth-store"
+import { NavUser } from "../components/nav-user"
+import { useAuthStore } from "../stores/auth-store"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
-} from "@/components/ui/sidebar"
+} from "../components/ui/sidebar"
 
 const data = {
   user: {

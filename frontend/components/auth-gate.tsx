@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuthStore } from "@/stores/auth-store";
+import { useAuthStore } from "../stores/auth-store";
 
 // Centralized client-side auth gate: redirects to /auth when unauthenticated on protected routes,
 // and redirects to /dashboard when authenticated on /auth or /signup.
@@ -16,9 +16,7 @@ export function AuthGate() {
     const isPublic =
       pathname === "/" ||
       pathname.startsWith("/auth") ||
-      pathname.startsWith("/signup") ||
-      pathname.startsWith("/streams");
-
+      pathname.startsWith("/signup")
     if (!session && !isPublic) {
       router.replace("/auth");
       return;

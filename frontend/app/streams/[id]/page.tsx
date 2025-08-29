@@ -2,25 +2,25 @@
 import { useParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import Hls from "hls.js";
-import { hlsUrlFor, chatWsUrlFor } from "@/lib/config";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { hlsUrlFor, chatWsUrlFor } from "../../../lib/config";
+import { Card, CardContent } from "../../../components/ui/card";
+import { Badge } from "../../../components/ui/badge";
+import { Separator } from "../../../components/ui/separator";
 import { Users, Dot } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { ScrollArea } from "../../../components/ui/scroll-area";
+import { Input } from "../../../components/ui/input";
+import { Button } from "../../../components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { monetization } from "@/modules/monetization";
-import { blockchain } from "@/modules/blockchain";
+} from "../../../components/ui/dialog";
+import { monetization } from "../../../modules/monetization";
+import { blockchain } from "../../../modules/blockchain";
 import { useState } from "react";
-import { analytics } from "@/modules/analytics";
+import { analytics } from "../../../modules/analytics";
 
 export default function StreamDetailPage() {
   const { id } = useParams<{ id: string }>();

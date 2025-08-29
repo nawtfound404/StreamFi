@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { LoginForm } from "@/components/login-form";
-import { auth } from "@/modules/auth";
+import { LoginForm } from "../../components/login-form";
+import { auth } from "../../modules/auth";
 
 export default function AuthPage() {
   const [email, setEmail] = useState("")
