@@ -1,6 +1,11 @@
 {
   "devDependencies": {
     "@types/node": "^24.3.0",
+    "prisma": "^6.15.0",
     "tsconfig-paths": "^4.2.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "@prisma/client": "^6.15.0"
   }
 }

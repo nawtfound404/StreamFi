@@ -6,9 +6,13 @@ services:
   # Backend Service
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: ./packages/backend/Dockerfile
     ports:
       - "8000:8000"
+      - "5555:5555"
+    env_file:
+      - ./packages/backend/.env
     depends_on:
       - db
     environment:
@@ -19,7 +23,7 @@ services:
   # Frontend Service
   frontend:
     build:
-      context: ./frontend
+      context: ./packages/frontend
       # Pass the build argument to the frontend Dockerfile
       args:
         NEXT_PUBLIC_API_BASE: http://backend:8000/api

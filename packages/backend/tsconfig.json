@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    // --- Core Settings (Keep these as they are) ---
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "sourceMap": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    // --- Path Aliases (Keep these as they are) ---
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["*"]
+    },
+
+    // --- THE CRITICAL FIX IS HERE ---
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  // We also need to tell TypeScript which files to include in its "world"
+  "include": ["src/**/*", "../foundry-contracts/out/**/*.json"],
+  "exclude": ["node_modules", "dist"]
+}

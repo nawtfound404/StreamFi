@@ -1,0 +1,95 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              String         @id @default(uuid())
+  email           String?        @unique
+  password        String?
+  name            String?
+  displayName     String?
+  about           String?
+  payoutEmail     String?
+  googleId        String?        @unique
+  role            UserRole       @default(AUDIENCE)
+  credits         Float          @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  streams         Stream[]
+  transactions    Transaction[]
+  notifications   Notification[]
+  walletAddress   String?        @unique
+  vaultId         BigInt?        @unique
+}
+
+model Stream {
+  id                String       @id @default(uuid())
+  title             String
+  ingestUrl         String?
+  streamKey         String?      @unique
+  status            StreamStatus @default(IDLE)
+  streamer          User         @relation(fields: [streamerId], references: [id])
+  streamerId        String
+  monetizationRules Json?
+  createdAt         DateTime     @default(now())
+  startedAt         DateTime?
+  endedAt           DateTime?
+  transactions      Transaction[]
+}
+
+model Transaction {
+  id        String            @id @default(uuid())
+  amount    Float
+  currency  String            @default("USD")
+  type      TransactionType
+  status    TransactionStatus
+  provider  String?
+  user      User              @relation(fields: [userId], references: [id])
+  userId    String
+  stream    Stream?           @relation(fields: [streamId], references: [id])
+  streamId  String?
+  metadata  Json?
+  createdAt DateTime          @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  type      String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+}
+
+enum UserRole {
+  STREAMER
+  AUDIENCE
+  ADMIN
+}
+
+enum StreamStatus {
+  IDLE
+  LIVE
+  ERROR
+}
+
+enum TransactionType {
+  DONATION
+  NFT_SALE
+  PAYOUT
+  CREDIT_PURCHASE
+  REFUND
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
