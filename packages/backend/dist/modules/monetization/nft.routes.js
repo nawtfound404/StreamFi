@@ -102,6 +102,19 @@ router.get('/nft/:tokenId/metadata', auth_middleware_1.authMiddleware, async (re
                     },
                     body: JSON.stringify({ pinataContent: json, pinataMetadata: { name: `streamfi-${tokenId}` } }),
                 }).catch(() => void 0);
+                // Also pin image if it's an IPFS URI
+                const img = (json && (json.image || json.image_url));
+                if (img && img.startsWith('ipfs://')) {
+                    const cid = img.replace('ipfs://', '').split('/')[0];
+                    await fetch('https://api.pinata.cloud/pinning/pinByHash', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${environment_1.env.pinata.jwt}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ hashToPin: cid, pinataMetadata: { name: `streamfi-img-${tokenId}` } }),
+                    }).catch(() => void 0);
+                }
             }
             catch { }
         }

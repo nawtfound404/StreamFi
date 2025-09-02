@@ -3,6 +3,7 @@ import http from 'http';
 import { Server as SocketIOServer, type ServerOptions } from 'socket.io';
 import { logger } from './utils/logger';
 import { onSocketConnection } from './services/overlay.service';
+import { setSocket } from './lib/socket';
 import { env } from './config/environment';
 import { blockchainService } from './services/blockchain.service';
 import { nftIndexer } from './services/nft-indexer.service';
@@ -17,13 +18,14 @@ const httpServer = http.createServer(app);
  */
 const ioOptions: Partial<ServerOptions> & { cors?: any } = {
   cors: {
-    origin: env.corsOrigin ? env.corsOrigin.split(',').map((s) => s.trim()) : '*',
+    origin: env.corsOrigin ? env.corsOrigin.split(',').map((s) => s.trim()) : false,
     methods: ['GET', 'POST'],
     credentials: true,
   },
 };
 
 const io = new SocketIOServer(httpServer, ioOptions);
+setSocket(io);
 
 onSocketConnection(io);
 

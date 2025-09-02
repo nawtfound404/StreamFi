@@ -11,7 +11,9 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 async function postToApi<T>(path: string, body: unknown): Promise<T> {
-  const headers: Record<string,string> = { 'Content-Type': 'application/json', ...getAuthHeaders() };
+  const csrfRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
+  const csrfToken = csrfRes.ok ? (await csrfRes.json()).csrfToken as string : undefined;
+  const headers: Record<string,string> = { 'Content-Type': 'application/json', ...getAuthHeaders(), ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) };
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers,
