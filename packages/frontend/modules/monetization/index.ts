@@ -96,3 +96,14 @@ export const monetization = {
     }
   },
 }
+
+export async function createStripeDonation(amount: number, currency = 'USD') {
+  const base = process.env.NEXT_PUBLIC_API_BASE || '';
+  const res = await fetch(`${base}/api/payments/stripe/create-payment-intent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, currency }),
+  });
+  if (!res.ok) throw new Error('Failed to create payment');
+  return res.json() as Promise<{ clientSecret: string | null }>; 
+}

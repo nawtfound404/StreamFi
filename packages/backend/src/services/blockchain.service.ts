@@ -68,6 +68,54 @@ class BlockchainService {
       }
     );
   }
+
+  /**
+   * Mint an NFT for the given wallet. In CreatorVault contract, this is equivalent
+   * to creating a new vault which also mints an ERC-721 to the owner.
+   */
+  public async mintNft(toWallet: string): Promise<bigint> {
+    return this.createVaultForUser(toWallet);
+  }
+
+  /** Get owner of a given tokenId (vaultId). */
+  public async ownerOf(tokenId: bigint | number | string): Promise<string> {
+    const id = BigInt(tokenId);
+    return this.registryContract.ownerOf(id);
+  }
+
+  /** Get tokenURI for a given tokenId (vaultId). */
+  public async getTokenUri(tokenId: bigint | number | string): Promise<string> {
+    const id = BigInt(tokenId);
+    return this.registryContract.tokenURI(id);
+  }
+
+  /** Derive owned tokenIds for an owner by scanning Transfer events. */
+  public async getTokensByOwner(owner: string): Promise<bigint[]> {
+    const fromBlock = env.blockchain.deployFromBlock ?? 0;
+    const toBlock = 'latest' as const;
+  const evt = this.registryContract.interface.getEvent('Transfer');
+  if (!evt) throw new Error('Transfer event not found in ABI');
+  const topicTransfer = evt.topicHash;
+    // Build topics for from=owner and to=owner
+    const topicsTo = [topicTransfer, null, ethers.zeroPadValue(owner as `0x${string}`, 32)];
+    const topicsFrom = [topicTransfer, ethers.zeroPadValue(owner as `0x${string}`, 32), null];
+    const [logsTo, logsFrom] = await Promise.all([
+      this.provider.getLogs({ address: this.registryContract.target as string, fromBlock, toBlock, topics: topicsTo }),
+      this.provider.getLogs({ address: this.registryContract.target as string, fromBlock, toBlock, topics: topicsFrom }),
+    ]);
+    const owned = new Set<bigint>();
+    for (const log of logsTo) {
+      const parsed = this.registryContract.interface.parseLog(log)!;
+      const tokenId = parsed.args.tokenId as bigint;
+      owned.add(tokenId);
+    }
+    for (const log of logsFrom) {
+      const parsed = this.registryContract.interface.parseLog(log)!;
+      const tokenId = parsed.args.tokenId as bigint;
+      owned.delete(tokenId);
+    }
+    return [...owned];
+  }
 }
 
 export const blockchainService = new BlockchainService();

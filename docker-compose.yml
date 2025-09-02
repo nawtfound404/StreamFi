@@ -15,8 +15,12 @@ services:
       - ./packages/backend/.env
     depends_on:
       - db
+      - nms
     environment:
       DATABASE_URL: "postgresql://user:password@db:5432/streamfi?schema=public"
+      NMS_RTMP_URL: "rtmp://nms:1935/live"
+      NMS_HLS_BASE: "http://nms:8001"
+      NMS_HLS_TEMPLATE: "/live/{key}/index.m3u8"
     networks:
       - streamfi-net
 
@@ -45,6 +49,18 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: streamfi
+    networks:
+      - streamfi-net
+
+  # Node Media Server
+  nms:
+    build:
+      context: ./packages/media-server
+    ports:
+      - "1935:1935"   # RTMP ingest
+      - "8001:8001"   # HLS HTTP
+    environment:
+      API_BASE: "http://backend:8000/api"
     networks:
       - streamfi-net
 

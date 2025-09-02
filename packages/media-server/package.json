@@ -1,0 +1,12 @@
+{
+  "name": "streamfi-media-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "node-media-server": "2.6.2"
+  }
+}

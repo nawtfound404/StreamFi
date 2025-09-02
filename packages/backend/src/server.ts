@@ -16,8 +16,9 @@ const httpServer = http.createServer(app);
  */
 const ioOptions: Partial<ServerOptions> & { cors?: any } = {
   cors: {
-    origin: '*',
+    origin: env.corsOrigin ? env.corsOrigin.split(',').map((s) => s.trim()) : '*',
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 };
 
