@@ -29,6 +29,8 @@ const onSocketConnection = (io) => {
     }).on('connection', (socket) => {
         logger_1.logger.info(`New client connected: ${socket.id}`);
         const streamId = socket.handshake.query.streamId;
+        let lastEmit = 0;
+        const minIntervalMs = 300; // ~3 msgs/sec
         if (streamId) {
             socket.join(streamId);
             logger_1.logger.info(`Socket ${socket.id} joined room ${streamId}`);
@@ -39,6 +41,10 @@ const onSocketConnection = (io) => {
         });
         // Basic chat relay for MVP
         socket.on('chat_message', (payload) => {
+            const now = Date.now();
+            if (now - lastEmit < minIntervalMs)
+                return; // soft drop
+            lastEmit = now;
             const room = payload.streamId || streamId;
             if (!room || !payload.text?.trim())
                 return;

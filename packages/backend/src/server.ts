@@ -5,6 +5,7 @@ import { logger } from './utils/logger';
 import { onSocketConnection } from './services/overlay.service';
 import { env } from './config/environment';
 import { blockchainService } from './services/blockchain.service';
+import { nftIndexer } from './services/nft-indexer.service';
 
 const PORT = env.port || 8000;
 
@@ -29,4 +30,7 @@ onSocketConnection(io);
 httpServer.listen(PORT, () => {
   logger.info(`🚀 Server is running on port ${PORT}`);
   blockchainService.listenForDonations();
+  // Kick off NFT indexer (non-blocking)
+  nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
+  nftIndexer.subscribe();
 });
