@@ -27,6 +27,12 @@ const envSchema = zod_1.z.object({
     // --- Yellow SDK / API ---
     YELLOW_API_KEY: zod_1.z.string().min(1, 'YELLOW_API_KEY is required.'),
     YELLOW_ENVIRONMENT: zod_1.z.enum(['mainnet', 'testnet']).default('testnet'),
+    // --- CORS / Frontend ---
+    CORS_ORIGIN: zod_1.z.string().optional(),
+    // --- Node Media Server (Streaming) ---
+    NMS_RTMP_URL: zod_1.z.string().url().default('rtmp://localhost:1935/live'),
+    NMS_HLS_BASE: zod_1.z.string().url().default('http://localhost:8001'),
+    NMS_HLS_TEMPLATE: zod_1.z.string().default('/live/{key}/index.m3u8'),
 });
 // Parse and validate the environment variables from `process.env`
 const parsedEnv = envSchema.parse(process.env);
@@ -53,6 +59,12 @@ exports.env = {
     yellow: {
         apiKey: parsedEnv.YELLOW_API_KEY,
         environment: parsedEnv.YELLOW_ENVIRONMENT,
+    },
+    corsOrigin: parsedEnv.CORS_ORIGIN,
+    nms: {
+        rtmpUrl: parsedEnv.NMS_RTMP_URL,
+        hlsBase: parsedEnv.NMS_HLS_BASE,
+        hlsTemplate: parsedEnv.NMS_HLS_TEMPLATE,
     },
 };
 //# sourceMappingURL=environment.js.map

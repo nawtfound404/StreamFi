@@ -73,3 +73,11 @@ Next steps
 - Replace ingest/HLS stubs with your Node Media Server or cloud provider
 - Wire real donations (Stripe/UPI/PayPal) and NFT mint flows
 - Add persistence for chat and notifications
+
+Payments (Stripe)
+- Backend: POST /api/payments/stripe/create-payment-intent returns a clientSecret. Configure STRIPE_SECRET_KEY in backend .env.
+- Webhook: set STRIPE_WEBHOOK_SECRET and point Stripe to POST /api/payments/stripe/webhook. Successful payments are recorded in the Transaction table.
+- Frontend: a minimal Stripe Elements page is available at /donate. Set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY and NEXT_PUBLIC_API_BASE.
+- Optional: use Stripe CLI for local webhook forwarding:
+	- Powershell
+		stripe listen --forward-to http://localhost:8000/api/payments/stripe/webhook
