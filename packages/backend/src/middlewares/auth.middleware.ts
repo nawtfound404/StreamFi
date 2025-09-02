@@ -4,12 +4,13 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/environment';
 import { logger } from '../utils/logger';
 import { UserRole } from '@prisma/client'; // import the enum/type
+import { prisma } from '../lib/prisma';
 
 export interface AuthRequest extends Request {
   user?: { id: string; role: UserRole };
 }
 
-export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -20,7 +21,11 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
 
   try {
     const decoded = jwt.verify(token, env.jwt.secret) as { id: string; role: UserRole };
-    req.user = { id: decoded.id, role: decoded.role };
+    // Enforce ban: check DB for banned flag
+    const user = await prisma.user.findUnique({ where: { id: decoded.id }, select: { id: true, role: true, banned: true } });
+    if (!user) return res.status(401).json({ message: 'Unauthorized: User not found' });
+    if (user.banned) return res.status(403).json({ message: 'Account banned' });
+    req.user = { id: user.id, role: user.role };
 
     next();
   } catch (error) {

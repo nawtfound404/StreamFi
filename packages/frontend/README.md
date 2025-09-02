@@ -1,3 +1,9 @@
+Frontend Notes
+
+- Requires env NEXT_PUBLIC_API_BASE (e.g. http://localhost:8000/api)
+- Optional NEXT_PUBLIC_WS_BASE for Socket.IO (e.g. ws://localhost:8000)
+- WalletConnect project id via NEXT_PUBLIC_WC_PROJECT_ID
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

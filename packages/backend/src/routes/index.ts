@@ -3,15 +3,23 @@ import authRoutes from '../modules/auth/auth.routes';
 import userRoutes from '../modules/users/user.routes';
 import streamRoutes from '../modules/stream/stream.routes';
 import monetizationRoutes from '../modules/monetization/monetization.routes';
+import nftRoutes from '../modules/monetization/nft.routes';
 import notificationRoutes from '../modules/notifications/notification.routes';
 import vaultRoutes from '../modules/vaults/vault.routes'; 
+import adminRoutes from '../modules/admin/admin.routes';
+import chatRoutes from '../modules/stream/chat.routes';
+import paymentsRoutes from '../modules/monetization/payments.routes';
 
 const router = Router();
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/stream', streamRoutes);
 router.use('/monetization', monetizationRoutes);
+router.use('/monetization', nftRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/vaults', vaultRoutes);
+router.use('/admin', adminRoutes);
+router.use('/chat', chatRoutes);
+router.use('/payments', paymentsRoutes);
 
 export default router;

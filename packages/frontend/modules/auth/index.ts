@@ -1,24 +1,42 @@
-// Auth & Identity Module (stubs)
-export type Role = "streamer" | "viewer" | "admin";
+// Auth & Identity Module wired to backend
+export type Role = "STREAMER" | "AUDIENCE" | "ADMIN" | "streamer" | "viewer" | "admin";
 
 export type Session = { userId: string; role: Role; token: string } | null;
 
-const DUMMY_ACCOUNTS: Array<{ email: string; password: string; role: Role; userId: string }> = [
-  { email: "demo@streamfi.dev", password: "demo123", role: "viewer", userId: "demo" },
-  { email: "creator@streamfi.dev", password: "stream123", role: "streamer", userId: "creator" },
-  { email: "admin@streamfi.dev", password: "admin123", role: "admin", userId: "admin" },
-];
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE;
+
+async function postJSON<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as T;
+}
+
+async function getJSON<T>(path: string, token?: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as T;
+}
 
 export const auth = {
   async signIn(params: { email: string; password: string }): Promise<Session> {
-    const found = DUMMY_ACCOUNTS.find((a) => a.email.toLowerCase() === params.email.toLowerCase() && a.password === params.password);
-    if (!found) return null;
-    return { userId: found.userId, role: found.role, token: "dev" };
+    if (!API_BASE) return null; // fallback disabled if no API
+    const data = await postJSON<{ token: string; user: { id: string; role: Role } }>("/auth/login", params);
+    return { userId: data.user.id, role: data.user.role, token: data.token };
   },
-  async signUp(params: { email: string; password: string }): Promise<Session> {
-    // Demo-only: pretend we created an account as a viewer
-    const userId = params.email.split("@")[0] || "user"
-    return { userId, role: "viewer", token: "dev" }
+  async signUp(params: { email: string; password: string; name?: string }): Promise<Session> {
+    if (!API_BASE) return null;
+    const data = await postJSON<{ token: string; user: { id: string; role: Role } }>("/auth/signup", params);
+    return { userId: data.user.id, role: data.user.role, token: data.token };
+  },
+  async getMe(token: string) {
+    if (!API_BASE) return null;
+    return getJSON<{ user: { id: string; role: Role } }>("/auth/me", token);
   },
   async signOut() {
     return true;
