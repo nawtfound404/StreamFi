@@ -39,6 +39,13 @@ const envSchema = z.object({
   NMS_RTMP_URL: z.string().url().default('rtmp://localhost:1935/live'),
   NMS_HLS_BASE: z.string().url().default('http://localhost:8001'),
   NMS_HLS_TEMPLATE: z.string().default('/live/{key}/index.m3u8'),
+  // --- Indexer & Metadata ---
+  IPFS_GATEWAY: z.string().url().optional(),
+  INDEXER_BATCH_SIZE: z.coerce.number().optional(),
+  INDEXER_REORG_DEPTH: z.coerce.number().optional(),
+  // --- Optional pinning (Pinata) ---
+  PINATA_JWT: z.string().optional(),
+  PIN_ON_METADATA_FETCH: z.enum(['true','false']).optional(),
 });
 
 // Parse and validate the environment variables from `process.env`
@@ -74,6 +81,15 @@ export const env = {
     rtmpUrl: parsedEnv.NMS_RTMP_URL,
     hlsBase: parsedEnv.NMS_HLS_BASE,
     hlsTemplate: parsedEnv.NMS_HLS_TEMPLATE,
+  },
+  ipfsGateway: parsedEnv.IPFS_GATEWAY || 'https://ipfs.io',
+  indexer: {
+    batchSize: parsedEnv.INDEXER_BATCH_SIZE ?? 5000,
+    reorgDepth: parsedEnv.INDEXER_REORG_DEPTH ?? 6,
+  },
+  pinata: {
+    jwt: parsedEnv.PINATA_JWT,
+    pinOnMetadataFetch: parsedEnv.PIN_ON_METADATA_FETCH === 'true',
   },
 };
 

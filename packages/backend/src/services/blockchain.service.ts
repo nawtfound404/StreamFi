@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { env } from '../config/environment';
+import { prisma } from '../lib/prisma';
 import { logger } from '../utils/logger';
 import NitroliteABI from './abi/Nitrolite.json';
 
@@ -7,15 +8,18 @@ class BlockchainService {
   private provider: ethers.JsonRpcProvider;
   private registryContract: ethers.Contract;
   private adminWallet: ethers.Wallet;
+  private hasDirectMint: boolean = false;
 
   constructor() {
     this.provider = new ethers.JsonRpcProvider(env.blockchain.rpcProvider);
     this.adminWallet = new ethers.Wallet(env.blockchain.adminPrivateKey, this.provider);
-    this.registryContract = new ethers.Contract(
+  this.registryContract = new ethers.Contract(
       env.blockchain.creatorVaultAddress,
       NitroliteABI.abi,
       this.adminWallet
     );
+  // Detect if contract exposes direct mint(address)
+  this.hasDirectMint = typeof (this.registryContract as any).mint === 'function';
     logger.info('Blockchain service initialized.');
   }
 
@@ -74,6 +78,25 @@ class BlockchainService {
    * to creating a new vault which also mints an ERC-721 to the owner.
    */
   public async mintNft(toWallet: string): Promise<bigint> {
+    if (this.hasDirectMint) {
+      try {
+        const tx = await (this.registryContract as any).mint(toWallet);
+        const receipt = await tx.wait(1);
+        for (const log of receipt.logs) {
+          try {
+            const parsed = this.registryContract.interface.parseLog(log);
+            if (parsed && parsed.name === 'Transfer') {
+              const tokenId: bigint = parsed.args.tokenId;
+              return tokenId;
+            }
+          } catch {}
+        }
+        throw new Error('Mint succeeded but Transfer not found');
+      } catch (e) {
+        // Fallback to createVault
+        return this.createVaultForUser(toWallet);
+      }
+    }
     return this.createVaultForUser(toWallet);
   }
 
@@ -115,6 +138,26 @@ class BlockchainService {
       owned.delete(tokenId);
     }
     return [...owned];
+  }
+
+  /** Faster owner lookup via DB index if available. */
+  public async getTokensByOwnerIndexed(owner: string): Promise<{ tokenId: string; tokenURI?: string }[]> {
+  const prismaAny: any = prisma as any;
+  if (!prismaAny.nftToken) return [];
+  const items = await prismaAny.nftToken.findMany({ where: { ownerAddress: owner.toLowerCase() }, orderBy: { tokenId: 'asc' } });
+  return items.map((i: any) => ({ tokenId: i.tokenId.toString(), tokenURI: i.tokenURI || undefined }));
+  }
+
+  /** Resolve token metadata JSON using IPFS gateway. */
+  public async fetchTokenMetadata(tokenURI: string): Promise<any | null> {
+    const url = tokenURI.startsWith('ipfs://') ? `${env.ipfsGateway}/ipfs/${tokenURI.replace('ipfs://','')}` : tokenURI;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
   }
 }
 

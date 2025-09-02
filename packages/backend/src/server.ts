@@ -3,8 +3,10 @@ import http from 'http';
 import { Server as SocketIOServer, type ServerOptions } from 'socket.io';
 import { logger } from './utils/logger';
 import { onSocketConnection } from './services/overlay.service';
+import { setSocket } from './lib/socket';
 import { env } from './config/environment';
 import { blockchainService } from './services/blockchain.service';
+import { nftIndexer } from './services/nft-indexer.service';
 
 const PORT = env.port || 8000;
 
@@ -16,17 +18,21 @@ const httpServer = http.createServer(app);
  */
 const ioOptions: Partial<ServerOptions> & { cors?: any } = {
   cors: {
-    origin: env.corsOrigin ? env.corsOrigin.split(',').map((s) => s.trim()) : '*',
+    origin: env.corsOrigin ? env.corsOrigin.split(',').map((s) => s.trim()) : false,
     methods: ['GET', 'POST'],
     credentials: true,
   },
 };
 
 const io = new SocketIOServer(httpServer, ioOptions);
+setSocket(io);
 
 onSocketConnection(io);
 
 httpServer.listen(PORT, () => {
   logger.info(`🚀 Server is running on port ${PORT}`);
   blockchainService.listenForDonations();
+  // Kick off NFT indexer (non-blocking)
+  nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
+  nftIndexer.subscribe();
 });

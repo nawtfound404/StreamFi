@@ -22,6 +22,8 @@ const envSchema = zod_1.z.object({
     JSON_RPC_PROVIDER: zod_1.z.string().url('JSON_RPC_PROVIDER must be a valid RPC URL.'),
     CREATOR_VAULT_ADDRESS: zod_1.z.string().startsWith('0x', 'Contract address must be a valid hex string.'),
     ADMIN_PRIVATE_KEY: zod_1.z.string().startsWith('0x', 'Admin private key must be a valid hex string.'),
+    // Optional contract deploy block to bound event scans
+    NITROLITE_DEPLOY_BLOCK: zod_1.z.coerce.number().optional(),
     // --- Payments ---
     STRIPE_SECRET_KEY: zod_1.z.string().optional(),
     // --- Yellow SDK / API ---
@@ -33,6 +35,13 @@ const envSchema = zod_1.z.object({
     NMS_RTMP_URL: zod_1.z.string().url().default('rtmp://localhost:1935/live'),
     NMS_HLS_BASE: zod_1.z.string().url().default('http://localhost:8001'),
     NMS_HLS_TEMPLATE: zod_1.z.string().default('/live/{key}/index.m3u8'),
+    // --- Indexer & Metadata ---
+    IPFS_GATEWAY: zod_1.z.string().url().optional(),
+    INDEXER_BATCH_SIZE: zod_1.z.coerce.number().optional(),
+    INDEXER_REORG_DEPTH: zod_1.z.coerce.number().optional(),
+    // --- Optional pinning (Pinata) ---
+    PINATA_JWT: zod_1.z.string().optional(),
+    PIN_ON_METADATA_FETCH: zod_1.z.enum(['true', 'false']).optional(),
 });
 // Parse and validate the environment variables from `process.env`
 const parsedEnv = envSchema.parse(process.env);
@@ -52,6 +61,7 @@ exports.env = {
         rpcProvider: parsedEnv.JSON_RPC_PROVIDER,
         creatorVaultAddress: parsedEnv.CREATOR_VAULT_ADDRESS,
         adminPrivateKey: parsedEnv.ADMIN_PRIVATE_KEY,
+        deployFromBlock: parsedEnv.NITROLITE_DEPLOY_BLOCK ?? 0,
     },
     stripe: {
         secretKey: parsedEnv.STRIPE_SECRET_KEY,
@@ -65,6 +75,15 @@ exports.env = {
         rtmpUrl: parsedEnv.NMS_RTMP_URL,
         hlsBase: parsedEnv.NMS_HLS_BASE,
         hlsTemplate: parsedEnv.NMS_HLS_TEMPLATE,
+    },
+    ipfsGateway: parsedEnv.IPFS_GATEWAY || 'https://ipfs.io',
+    indexer: {
+        batchSize: parsedEnv.INDEXER_BATCH_SIZE ?? 5000,
+        reorgDepth: parsedEnv.INDEXER_REORG_DEPTH ?? 6,
+    },
+    pinata: {
+        jwt: parsedEnv.PINATA_JWT,
+        pinOnMetadataFetch: parsedEnv.PIN_ON_METADATA_FETCH === 'true',
     },
 };
 //# sourceMappingURL=environment.js.map

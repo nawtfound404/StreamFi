@@ -68,6 +68,31 @@ export const monetization = {
     void d
     return { ok: true }
   },
+  async upiIntent(amount: number, currency = 'INR', streamId?: string, userId?: string) {
+    if (!API_BASE) return null;
+  const tokenRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
+  const csrfToken = tokenRes.ok ? (await tokenRes.json()).csrfToken as string : undefined;
+  const res = await fetch(`${API_BASE}/payments/upi/intent`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) }, body: JSON.stringify({ amount, currency, streamId, userId }) });
+    if (!res.ok) throw new Error('UPI intent failed');
+    return res.json() as Promise<{ intentId: string; deeplink: string }>;
+  },
+  async paypalIntent(amount: number, currency = 'USD', streamId?: string, userId?: string) {
+    if (!API_BASE) return null;
+  const tokenRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
+  const csrfToken = tokenRes.ok ? (await tokenRes.json()).csrfToken as string : undefined;
+  const res = await fetch(`${API_BASE}/payments/paypal/intent`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) }, body: JSON.stringify({ amount, currency, streamId, userId }) });
+    if (!res.ok) throw new Error('PayPal intent failed');
+    return res.json() as Promise<{ orderId: string; approveUrl: string }>;
+  },
+  async createPayout(amount: number, currency = 'USD', note?: string) {
+    if (!API_BASE) return null;
+    const token = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('streamfi-auth') || '{}')?.state?.session?.token : undefined;
+  const tokenRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
+  const csrfToken = tokenRes.ok ? (await tokenRes.json()).csrfToken as string : undefined;
+  const res = await fetch(`${API_BASE}/monetization/payouts`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) }, body: JSON.stringify({ amount, currency, note }) });
+    if (!res.ok) throw new Error('Create payout failed');
+    return res.json();
+  },
   async getDonations() {
     const api = await fetchFromApi<Donation[]>(`/monetization/donations`)
     return api ?? demoDonations
