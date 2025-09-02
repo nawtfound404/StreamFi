@@ -92,6 +92,21 @@ model Mute {
   createdAt DateTime @default(now())
 }
 
+// Indexed on-chain NFTs for faster ownership queries
+model NftToken {
+  tokenId      BigInt   @id
+  ownerAddress String   @db.VarChar(66)
+  tokenURI     String?
+  updatedAt    DateTime @updatedAt
+}
+
+// Track last processed block for the NFT indexer
+model NftSyncState {
+  id        String  @id @default("nitrolite")
+  lastBlock BigInt  @default(0)
+  updatedAt DateTime @updatedAt
+}
+
 enum UserRole {
   STREAMER
   AUDIENCE
