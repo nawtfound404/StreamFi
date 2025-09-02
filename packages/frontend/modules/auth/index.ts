@@ -5,10 +5,22 @@ export type Session = { userId: string; role: Role; token: string } | null;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE;
 
+async function getCsrfToken(): Promise<string | null> {
+  try {
+    if (!API_BASE) return null;
+    const res = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
+    if (!res.ok) return null;
+    const data = await res.json() as { csrfToken?: string };
+    return data?.csrfToken ?? res.headers.get('x-csrf-token');
+  } catch { return null; }
+}
+
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
+  const token = await getCsrfToken();
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(token ? { 'x-csrf-token': token } : {}) },
+    credentials: 'include',
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await res.text());

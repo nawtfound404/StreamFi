@@ -1,83 +1,114 @@
-StreamFi — Live Streaming + Web3 + Realtime MVP
+<div align="center">
 
-Overview
-StreamFi is an end-to-end MVP that brings together:
+# StreamFi · Live Streaming × Web3 × Realtime
 
-- User auth and roles (Streamer, Viewer, Admin)
-- Streaming core (ingest via RTMP, HLS playback wiring)
-- Realtime chat/reactions via Socket.IO
-- Donations and Web3 NFT hooks
-- Admin moderation
-- Next.js frontend with a clean theme
+<img src="packages/frontend/public/globe.svg" height="64" alt="StreamFi" />
 
-What’s included
-- Backend (Express + Prisma + Socket.IO)
-	- /api/auth: signup/login/me with JWT
-	- /api/stream: ingest details, status, HLS URL
-	- /api/monetization: summary/donations/NFTs/payouts (MVP data)
-	- /api/notifications: list/read (MVP)
-	- /api/admin: mute/ban (MVP)
-	- Socket.IO server for chat and reactions
-- Frontend (Next.js App Router)
-	- Wallet connect using RainbowKit + wagmi/viem
-	- Viewer pages: live player (HLS.js), chat, donate, mint NFT
-	- Dashboard/settings: generate ingest key demo
-	- Admin page: mute/ban demo buttons
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
+[![Express](https://img.shields.io/badge/Express-4.x-000?logo=express)](https://expressjs.com/)
+[![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?logo=prisma)](https://www.prisma.io/)
+[![Socket.IO](https://img.shields.io/badge/Socket.IO-4.x-010101?logo=socketdotio)](https://socket.io/)
+[![Stripe](https://img.shields.io/badge/Stripe-ready-626CD9?logo=stripe&logoColor=white)](https://stripe.com/)
 
-USP
-- Unified stack: live streaming, realtime chat, and Web3 monetization in one codebase
-- Modern, accessible UI paired with pragmatic backend wiring
-- Extensible: swap RTMP/HLS backends or chain easily
+</div>
 
-Quick start
-1) Prereqs
-- Node 18+
-- Docker (optional, for compose)
+## Why StreamFi (USP)
 
-2) Env
-- Copy packages/backend/.env.example to .env and fill:
-	- DATABASE_URL
-	- JWT_SECRET
-	- JSON_RPC_PROVIDER, CREATOR_VAULT_ADDRESS, ADMIN_PRIVATE_KEY
-	- YELLOW_API_KEY
-- Frontend env (build-time):
-	- NEXT_PUBLIC_API_BASE (e.g. http://localhost:8000/api)
-	- NEXT_PUBLIC_WC_PROJECT_ID (WalletConnect / RainbowKit)
-	- Optionally NEXT_PUBLIC_WS_BASE (e.g. ws://localhost:8000)
+- One cohesive stack blending live streaming, realtime chat, and on-chain monetization (NFTs, tips) out of the box.
+- Batteries-included DX: authentication, roles, admin/mod tools, metrics, logging, CSRF, CORS/Helmet.
+- Modular by design: swap RTMP/HLS backends, change chains/providers, or extend features without rewiring everything.
 
-3) Run with Docker Compose
+## How it works
+
+1) Ingest + HLS
+- OBS pushes RTMP to your origin (Node Media Server or cloud). The backend builds HLS URLs or proxies via `/api/stream/:id/hls`.
+2) Realtime
+- Viewers join a stream room over Socket.IO; per-event rate limits and moderation namespace are enforced.
+3) Monetization
+- Donations via Stripe/UPI/PayPal stubs and NFT mint/indexer hooks. Payout requests flow is included.
+4) Web3
+- Ethers v6 + indexer to sync NFT ownership and metadata (IPFS gateway + optional Pinata pinning).
+
+## Tech stack
+
+- Frontend: Next.js 15 (App Router), React 19, Tailwind/shadcn, RainbowKit/wagmi, hls.js, socket.io-client.
+- Backend: Node/Express, TypeScript, Prisma (PostgreSQL), Socket.IO, ethers v6.
+- Security/ops: Helmet, strict CORS, CSRF, API/socket rate limits, structured logs (Pino + correlation IDs), Prometheus metrics `/metrics`.
+
+## Monorepo layout
+
+```
+packages/
+	backend/      # Express + Prisma + Socket.IO API
+	frontend/     # Next.js app
+	foundry-contracts/  # Solidity + Foundry (demo contracts)
+docs/           # Architecture notes
+docker-compose.yml
+```
+
+## Environment
+
+- Backend: copy `packages/backend/.env.example` → `packages/backend/.env` and fill required values (DATABASE_URL, JWT_SECRET, JSON_RPC_PROVIDER, YELLOW_API_KEY…).
+- Frontend: copy `packages/frontend/.env.example` → `packages/frontend/.env.local` (or `.env`) and set `NEXT_PUBLIC_API_BASE` to `http://localhost:8000/api`.
+
+## Run (Docker Compose)
+
+```powershell
 docker compose up --build
+```
 
-This will start:
+Services
 - Backend: http://localhost:8000
 - Frontend: http://localhost:3000
-- Postgres: localhost:5433 (inside compose network as db:5432)
+- Postgres: localhost:5433 (db service is 5432 inside the network)
 
-Local dev (no Docker)
-- Backend: cd packages/backend; npm i; npx prisma generate; npm run dev
-- Frontend: cd packages/frontend; npm i; npm run dev
+## Run (local dev)
 
-MVP walkthrough
-- Login with email/password on /auth (JWT stored client-side via zustand)
-- Settings → generate ingest to get RTMP URL/key demo
-- Streams → select a live stream; HLS wired, chat via Socket.IO
-- Donate/Mint NFT buttons call stubs ready to integrate with Stripe/Web3
-- Admin page exposes mute/ban demo endpoints
+```powershell
+# backend
+cd packages/backend
+npm install
+npx prisma generate
+npm run dev
 
-Notes
-- RTMP ingest and transcoding are stubbed; point to your NMS/OBS config and update HLS envs
-- Chat uses Socket.IO room per stream (query streamId)
-- Blockchain service listens to Deposit events (Nitrolite ABI), ensure your env is set
+# frontend (new terminal)
+cd packages/frontend
+npm install
+npm run dev
+```
 
-Next steps
-- Replace ingest/HLS stubs with your Node Media Server or cloud provider
-- Wire real donations (Stripe/UPI/PayPal) and NFT mint flows
-- Add persistence for chat and notifications
+## Key features
 
-Payments (Stripe)
-- Backend: POST /api/payments/stripe/create-payment-intent returns a clientSecret. Configure STRIPE_SECRET_KEY in backend .env.
-- Webhook: set STRIPE_WEBHOOK_SECRET and point Stripe to POST /api/payments/stripe/webhook. Successful payments are recorded in the Transaction table.
-- Frontend: a minimal Stripe Elements page is available at /donate. Set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY and NEXT_PUBLIC_API_BASE.
-- Optional: use Stripe CLI for local webhook forwarding:
-	- Powershell
-		stripe listen --forward-to http://localhost:8000/api/payments/stripe/webhook
+- Auth & roles (Streamer, Viewer, Admin) with JWT
+- Stream ingest/HLS helpers, HLS player with retry/backoff and quality control
+- Realtime chat + reactions; moderator namespace `/mod/:streamId` with owner/admin checks
+- Donations (Stripe intent + webhooks, UPI/PayPal stubs), CSV export; payout requests
+- NFT indexer (backfill + subscribe) and metadata resolution (IPFS + optional pinning)
+- Metrics: `/health`, `/metrics` (Prometheus); correlation ID sampling logs
+
+## Payments (Stripe)
+
+- Backend: `POST /api/payments/stripe/create-payment-intent` → `clientSecret` (requires STRIPE_SECRET_KEY).
+- Webhook: set STRIPE_WEBHOOK_SECRET and send events to `POST /api/payments/stripe/webhook`.
+- Frontend: `/donate` uses Stripe Elements; set `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+- Optional local webhook via Stripe CLI:
+
+```powershell
+stripe listen --forward-to http://localhost:8000/api/payments/stripe/webhook
+```
+
+## Screenshots
+
+> Add your screenshots or short clips here (player, dashboard, donations).
+
+## Roadmap
+
+- CI pipeline (install, lint/typecheck, build, backend tests)
+- OpenTelemetry tracing + pino/otel binding; configurable sampling
+- Redis-based rate limiting for sockets
+- More tests and OpenAPI docs
+
+---
+
+MIT © StreamFi contributors

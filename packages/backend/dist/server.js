@@ -8,6 +8,7 @@ const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const logger_1 = require("./utils/logger");
 const overlay_service_1 = require("./services/overlay.service");
+const socket_1 = require("./lib/socket");
 const environment_1 = require("./config/environment");
 const blockchain_service_1 = require("./services/blockchain.service");
 const nft_indexer_service_1 = require("./services/nft-indexer.service");
@@ -19,12 +20,13 @@ const httpServer = http_1.default.createServer(app_1.default);
  */
 const ioOptions = {
     cors: {
-        origin: environment_1.env.corsOrigin ? environment_1.env.corsOrigin.split(',').map((s) => s.trim()) : '*',
+        origin: environment_1.env.corsOrigin ? environment_1.env.corsOrigin.split(',').map((s) => s.trim()) : false,
         methods: ['GET', 'POST'],
         credentials: true,
     },
 };
 const io = new socket_io_1.Server(httpServer, ioOptions);
+(0, socket_1.setSocket)(io);
 (0, overlay_service_1.onSocketConnection)(io);
 httpServer.listen(PORT, () => {
     logger_1.logger.info(`🚀 Server is running on port ${PORT}`);

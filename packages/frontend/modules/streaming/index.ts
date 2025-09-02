@@ -8,11 +8,14 @@ export const streaming = {
   async createIngest(): Promise<StreamInfo> {
     if (!API_BASE) return { key: "dev", ingestUrl: "rtmp://localhost:1935/live", hlsUrl: "/hls/demo.m3u8" };
     const token = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('streamfi-auth') || '{}')?.state?.session?.token : undefined;
+  const csrfRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
+  const csrfToken = csrfRes.ok ? (await csrfRes.json()).csrfToken as string : undefined;
     const res = await fetch(`${API_BASE}/stream/ingest`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
       },
     });
     if (!res.ok) throw new Error(await res.text());

@@ -2,17 +2,89 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import crypto from 'crypto';
+import csrf from 'csurf';
+import client from 'prom-client';
+import responseTime from 'response-time';
+import type { Request, Response, NextFunction } from 'express';
+import { withReqId } from './utils/logger';
 import { errorHandler } from './middlewares/errorHandler';
 import { rateLimiter } from './middlewares/rateLimiter';
 import apiRoutes from './routes';
 
 const app = express();
-app.use(cors({ origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*', credentials: true }));
-app.use(helmet());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// CORS: default deny; allow configured origins only
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(s=>s.trim()) : [];
+app.use(cors({ origin: (origin, cb) => {
+	if (!origin) return cb(null, true); // allow same-origin/non-browser
+	if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
+	return cb(new Error('Not allowed by CORS'));
+}, credentials: true }));
+
+// Helmet with tighter defaults
+app.use(helmet({
+	crossOriginEmbedderPolicy: false,
+	contentSecurityPolicy: false,
+}));
+
+// Correlation ID middleware
+app.use((req: Request, _res: Response, next: NextFunction) => {
+	const reqId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+	(req as any).reqId = reqId;
+	(req as any).log = withReqId(reqId);
+	// propagate to downstreams
+	(_res as Response).setHeader('x-request-id', reqId);
+	next();
+});
+
+// Basic sampler: log 10% of requests at info; errors always logged in errorHandler
+app.use((req: Request, res: Response, next: NextFunction) => {
+	const log = (req as any).log;
+	const sample = Math.random() < 0.1;
+	if (sample) log.info({ method: req.method, url: req.url });
+	next();
+});
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(rateLimiter);
+
+// Metrics
+client.collectDefaultMetrics();
+const httpRequestDurationMicroseconds = new client.Histogram({
+	name: 'http_request_duration_ms',
+	help: 'Duration of HTTP requests in ms',
+	labelNames: ['method', 'route', 'code'],
+	buckets: [50, 100, 300, 500, 1000, 3000]
+});
+app.use(responseTime((req: Request, res: Response, time: number) => {
+	const route = (req as any).route?.path || req.path;
+	httpRequestDurationMicroseconds.labels(req.method, route, String(res.statusCode)).observe(time);
+}));
+// CSRF setup with cookie-based secret so no server session is required
+const csrfProtection = csrf({ cookie: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' } });
+app.use((req, res, next) => {
+	const isWebhook = req.path.startsWith('/api/payments/stripe/webhook')
+		|| req.path.startsWith('/api/payments/upi/webhook')
+		|| req.path.startsWith('/api/payments/paypal/webhook');
+	const isUnsafe = ['POST','PUT','PATCH','DELETE'].includes(req.method);
+	const isBrowser = !!req.headers.origin;
+	if (isUnsafe && isBrowser && !isWebhook) return csrfProtection(req, res, next);
+	return next();
+});
+
 app.use('/api', apiRoutes);
+// CSRF token issuance for browsers: returns a one-time token bound to the secret cookie
+app.get('/api/csrf', csrfProtection, (req: Request, res: Response) => {
+	const token = (req as any).csrfToken?.() as string | undefined;
+	if (!token) return res.status(500).json({ error: 'csrf_unavailable' });
+	res.setHeader('x-csrf-token', token);
+	return res.json({ csrfToken: token });
+});
 app.get('/health', (_req, res) => res.status(200).json({ status: 'UP' }));
+app.get('/metrics', async (_req, res) => {
+	res.set('Content-Type', client.register.contentType);
+	res.end(await client.register.metrics());
+});
 app.use(errorHandler);
 export default app;
