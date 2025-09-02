@@ -23,6 +23,18 @@ export const onSocketConnection = (io: Server) => {
       logger.info(`Reaction received for stream ${data.streamId}`);
     });
 
+    // Basic chat relay for MVP
+    socket.on('chat_message', (payload: { streamId: string; user?: string; text: string }) => {
+      const room = payload.streamId || streamId;
+      if (!room || !payload.text?.trim()) return;
+      io.to(room).emit('chat_message', {
+        id: Date.now().toString(),
+        user: payload.user || 'anon',
+        text: payload.text,
+        at: Date.now(),
+      });
+    });
+
     socket.on('disconnect', () => {
       logger.info(`Client disconnected: ${socket.id}`);
     });

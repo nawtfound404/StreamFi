@@ -5,6 +5,11 @@ const getIngest = (_req, res) => res.status(200).json({ ingestUrl: 'rtmp://inges
 exports.getIngest = getIngest;
 const getStreamStatus = (req, res) => res.status(200).json({ id: req.params.id, status: 'live', viewers: 123, startedAt: new Date() });
 exports.getStreamStatus = getStreamStatus;
-const getHls = (req, res) => res.status(200).json({ hlsUrl: `https://hls.streamfi.io/live/${req.params.id}/index.m3u8` });
+const getHls = (req, res) => {
+    const url = `https://hls.streamfi.io/live/${req.params.id}/index.m3u8`;
+    if (req.query.redirect)
+        return res.redirect(302, url);
+    return res.status(200).json({ hlsUrl: url });
+};
 exports.getHls = getHls;
 //# sourceMappingURL=stream.controller.js.map

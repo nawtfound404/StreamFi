@@ -10,6 +10,7 @@ const stream_routes_1 = __importDefault(require("../modules/stream/stream.routes
 const monetization_routes_1 = __importDefault(require("../modules/monetization/monetization.routes"));
 const notification_routes_1 = __importDefault(require("../modules/notifications/notification.routes"));
 const vault_routes_1 = __importDefault(require("../modules/vaults/vault.routes"));
+const admin_routes_1 = __importDefault(require("../modules/admin/admin.routes"));
 const router = (0, express_1.Router)();
 router.use('/auth', auth_routes_1.default);
 router.use('/users', user_routes_1.default);
@@ -17,5 +18,6 @@ router.use('/stream', stream_routes_1.default);
 router.use('/monetization', monetization_routes_1.default);
 router.use('/notifications', notification_routes_1.default);
 router.use('/vaults', vault_routes_1.default);
+router.use('/admin', admin_routes_1.default);
 exports.default = router;
 //# sourceMappingURL=index.js.map

@@ -2,7 +2,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import Hls from "hls.js";
-import { hlsUrlFor, chatWsUrlFor } from "../../../lib/config";
+import { hlsUrlFor } from "../../../lib/config";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Separator } from "../../../components/ui/separator";
@@ -20,6 +20,7 @@ import {
 import { monetization } from "../../../modules/monetization";
 import { blockchain } from "../../../modules/blockchain";
 import { useState } from "react";
+import { io, Socket } from "socket.io-client";
 import { analytics } from "../../../modules/analytics";
 
 export default function StreamDetailPage() {
@@ -41,24 +42,24 @@ export default function StreamDetailPage() {
     }
   }, [hlsSrc]);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<Socket | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    // Placeholder WebSocket URL; replace with real chat endpoint
-  const ws = new WebSocket(chatWsUrlFor(String(id)));
-    wsRef.current = ws;
-    ws.onmessage = () => {
-      // In a real client, parse and append to state; keep simple placeholder
+    const base = process.env.NEXT_PUBLIC_API_BASE || '';
+    const wsUrl = base.replace(/^http/, 'ws');
+    const socket = io(wsUrl, { transports: ['websocket'], query: { streamId: String(id) } });
+    wsRef.current = socket;
+    socket.on('chat_message', (msg: { user: string; text: string }) => {
       if (messagesRef.current) {
-        const el = document.createElement("div");
-        el.className = "text-sm";
-        el.textContent = "New message";
+        const el = document.createElement('div');
+        el.className = 'text-sm';
+        el.textContent = `${msg.user}: ${msg.text}`;
         messagesRef.current.appendChild(el);
         messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
       }
-    };
-    return () => ws.close();
+    });
+    return () => { socket.disconnect(); };
   }, [id]);
 
   return (
@@ -125,13 +126,13 @@ export default function StreamDetailPage() {
               <Input placeholder="Send a message" onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   const val = (e.target as HTMLInputElement).value.trim();
-                  if (val && wsRef.current?.readyState === 1) { wsRef.current.send(val); (e.target as HTMLInputElement).value = ""; }
+                  if (val && wsRef.current) { wsRef.current.emit('chat_message', { streamId: String(id), text: val, user: 'viewer' }); (e.target as HTMLInputElement).value = ""; }
                 }
               }} />
               <Button onClick={() => {
                 const input = document.querySelector<HTMLInputElement>('input[placeholder="Send a message"]');
                 const val = input?.value.trim();
-                if (val && wsRef.current?.readyState === 1) { wsRef.current.send(val); if (input) input.value = ""; }
+                if (val && wsRef.current) { wsRef.current.emit('chat_message', { streamId: String(id), text: val, user: 'viewer' }); if (input) input.value = ""; }
               }}>Send</Button>
             </div>
           </CardContent>

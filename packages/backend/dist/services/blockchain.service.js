@@ -4,7 +4,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.blockchainService = void 0;
-// packages/backend/src/services/blockchain.service.ts
 const ethers_1 = require("ethers");
 const environment_1 = require("../config/environment");
 const logger_1 = require("../utils/logger");
@@ -19,6 +18,9 @@ class BlockchainService {
         this.registryContract = new ethers_1.ethers.Contract(environment_1.env.blockchain.creatorVaultAddress, Nitrolite_json_1.default.abi, this.adminWallet);
         logger_1.logger.info('Blockchain service initialized.');
     }
+    /**
+     * Creates a vault for a user on-chain.
+     */
     async createVaultForUser(userWalletAddress) {
         try {
             logger_1.logger.info(`Sending transaction to create vault for owner: ${userWalletAddress}`);
@@ -34,8 +36,8 @@ class BlockchainService {
                         return vaultId;
                     }
                 }
-                catch (error) {
-                    // Ignore logs that aren't from our contract
+                catch {
+                    // Ignore logs that don’t match VaultCreated
                 }
             }
             throw new Error('VaultCreated event not found in transaction receipt.');
@@ -45,20 +47,18 @@ class BlockchainService {
             throw new Error('On-chain vault creation failed.');
         }
     }
+    /**
+     * Listen for Deposit events on the contract.
+     */
     listenForDonations() {
         const contractAddress = environment_1.env.blockchain.creatorVaultAddress;
         logger_1.logger.info(`👂 Listening for Deposit events on contract: ${contractAddress}`);
+        // ethers v6 event listeners automatically type args + event object
         this.registryContract.on('Deposit', (vaultId, donor, amount, event) => {
             logger_1.logger.info('🎉 New On-Chain Donation Received!');
             logger_1.logger.info(`  -> Vault ID: ${vaultId.toString()}`);
             logger_1.logger.info(`  -> From: ${donor}`);
-            try {
-                logger_1.logger.info(`  -> Amount: ${ethers_1.ethers.formatEther(amount)} ETH`);
-            }
-            catch {
-                logger_1.logger.info(`  -> Amount (raw): ${amount.toString()}`);
-            }
-            // Use transactionHash directly from the event (Ethers v6 EventLog)
+            logger_1.logger.info(`  -> Amount: ${ethers_1.ethers.formatEther(amount)} ETH`);
             logger_1.logger.info(`  -> Transaction: https://sepolia.etherscan.io/tx/${event.transactionHash}`);
         });
     }
