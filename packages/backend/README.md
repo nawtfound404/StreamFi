@@ -68,13 +68,13 @@ npm install
 
 ### 3. Environment Variables
 
-Copy `.env.example` → `.env` and configure:
+Copy `.env.example` → `.env` and configure (see also `src/config/environment.ts` for required keys):
 
 ```bash
 cp .env.example .env
 ```
 
-Update database connection and JWT secrets.
+Required: `DATABASE_URL`, `JWT_SECRET`, `JSON_RPC_PROVIDER`, `CREATOR_VAULT_ADDRESS`, `ADMIN_PRIVATE_KEY`, `YELLOW_API_KEY`.
 
 ### 4. Run Database Migrations
 

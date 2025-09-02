@@ -8,6 +8,8 @@ const stripe_1 = __importDefault(require("stripe"));
 const environment_1 = require("../../config/environment");
 const express_2 = __importDefault(require("express"));
 const prisma_1 = require("../../lib/prisma");
+const socket_1 = require("../../lib/socket");
+const crypto_1 = __importDefault(require("crypto"));
 const router = (0, express_1.Router)();
 const stripe = environment_1.env.stripe.secretKey ? new stripe_1.default(environment_1.env.stripe.secretKey, { apiVersion: '2024-06-20' }) : null;
 router.post('/stripe/create-payment-intent', async (req, res) => {
@@ -41,7 +43,15 @@ router.post('/stripe/webhook', express_2.default.raw({ type: 'application/json' 
                 txData.userId = String(pi.metadata.userId);
             if (pi.metadata?.streamId)
                 txData.streamId = String(pi.metadata.streamId);
-            await prisma_1.prisma.transaction.create({ data: txData }).catch(() => void 0);
+            const tx = await prisma_1.prisma.transaction.create({ data: txData }).catch(() => void 0);
+            if (pi.metadata?.streamId) {
+                (0, socket_1.emitToStream)(String(pi.metadata.streamId), 'donation', {
+                    amount: txData.amount,
+                    currency: txData.currency,
+                    from: txData.userId || 'anon',
+                    message: pi.metadata?.message || '',
+                });
+            }
         }
         res.json({ received: true });
     }
@@ -50,4 +60,71 @@ router.post('/stripe/webhook', express_2.default.raw({ type: 'application/json' 
     }
 });
 exports.default = router;
+// ----- UPI (mock provider example) -----
+const upiRouter = (0, express_1.Router)();
+// Create UPI intent (mock)
+upiRouter.post('/intent', async (req, res) => {
+    const { amount, currency, streamId, userId } = req.body;
+    if (!amount)
+        return res.status(400).json({ message: 'amount required' });
+    const id = crypto_1.default.randomUUID();
+    // In real integration, generate UPI deeplink / QR and return
+    return res.status(200).json({ intentId: id, deeplink: `upi://pay?pa=demo@bank&am=${amount}&cu=${(currency || 'INR').toUpperCase()}`, streamId, userId });
+});
+// Webhook (mock confirmation)
+upiRouter.post('/webhook', async (req, res) => {
+    const evt = req.body;
+    if (evt?.type === 'upi.payment_succeeded') {
+        const meta = evt.data || {};
+        const tx = await prisma_1.prisma.transaction.create({ data: {
+                amount: Number(meta.amount || 0),
+                currency: String(meta.currency || 'INR').toUpperCase(),
+                type: 'DONATION',
+                status: 'COMPLETED',
+                provider: 'UPI',
+                userId: String(meta.userId || ''),
+                streamId: meta.streamId ? String(meta.streamId) : null,
+                metadata: meta,
+            } }).catch(() => null);
+        if (meta.streamId)
+            (0, socket_1.emitToStream)(String(meta.streamId), 'donation', { amount: Number(meta.amount || 0), currency: String(meta.currency || 'INR').toUpperCase(), from: String(meta.userId || 'anon') });
+    }
+    return res.json({ ok: true });
+});
+router.use('/upi', upiRouter);
+// ----- PayPal (mock provider example) -----
+const paypalRouter = (0, express_1.Router)();
+// Create PayPal order (mock)
+paypalRouter.post('/intent', async (req, res) => {
+    const { amount, currency, streamId, userId } = req.body;
+    if (!amount)
+        return res.status(400).json({ message: 'amount required' });
+    const id = crypto_1.default.randomUUID();
+    // Real flow would create an order via PayPal REST API and return approval link
+    return res.status(200).json({ orderId: id, approveUrl: `https://paypal.com/checkoutnow?token=${id}`, streamId, userId });
+});
+// Webhook (mock capture)
+paypalRouter.post('/webhook', async (req, res) => {
+    const evt = req.body;
+    if (evt?.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+        const resource = evt.resource || {};
+        const meta = resource.custom_id ? JSON.parse(resource.custom_id) : {};
+        const amountVal = Number(resource?.amount?.value || meta?.amount || 0);
+        const currency = String(resource?.amount?.currency_code || meta?.currency || 'USD').toUpperCase();
+        const tx = await prisma_1.prisma.transaction.create({ data: {
+                amount: amountVal,
+                currency,
+                type: 'DONATION',
+                status: 'COMPLETED',
+                provider: 'PAYPAL',
+                userId: String(meta.userId || ''),
+                streamId: meta.streamId ? String(meta.streamId) : null,
+                metadata: resource,
+            } }).catch(() => null);
+        if (meta.streamId)
+            (0, socket_1.emitToStream)(String(meta.streamId), 'donation', { amount: amountVal, currency, from: String(meta.userId || 'anon') });
+    }
+    return res.json({ ok: true });
+});
+router.use('/paypal', paypalRouter);
 //# sourceMappingURL=payments.routes.js.map

@@ -30,6 +30,7 @@ model User {
   vaultId         BigInt?        @unique
   chatMessages    ChatMessage[]
   mutes           Mute?
+  payouts         PayoutRequest[]
 }
 
 model Stream {
@@ -63,6 +64,18 @@ model Transaction {
   createdAt DateTime          @default(now())
 }
 
+model PayoutRequest {
+  id         String   @id @default(uuid())
+  streamer   User     @relation(fields: [streamerId], references: [id])
+  streamerId String
+  amount     Float
+  currency   String   @default("USD")
+  status     PayoutStatus @default(PENDING)
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
 model Notification {
   id        String   @id @default(uuid())
   type      String
@@ -92,6 +105,21 @@ model Mute {
   createdAt DateTime @default(now())
 }
 
+// Indexed on-chain NFTs for faster ownership queries
+model NftToken {
+  tokenId      BigInt   @id
+  ownerAddress String   @db.VarChar(66)
+  tokenURI     String?
+  updatedAt    DateTime @updatedAt
+}
+
+// Track last processed block for the NFT indexer
+model NftSyncState {
+  id        String  @id @default("nitrolite")
+  lastBlock BigInt  @default(0)
+  updatedAt DateTime @updatedAt
+}
+
 enum UserRole {
   STREAMER
   AUDIENCE
@@ -116,4 +144,11 @@ enum TransactionStatus {
   PENDING
   COMPLETED
   FAILED
+}
+
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
 }
