@@ -20,6 +20,13 @@ const eslintConfig = [
       "next-env.d.ts",
     ],
   },
+  {
+    rules: {
+      "@next/next/no-document-import-in-page": "off",
+      "@next/next/no-title-in-document-head": "off",
+      "@next/next/no-duplicate-head": "off",
+    },
+  },
 ];
 
 export default eslintConfig;
