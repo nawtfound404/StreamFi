@@ -33,6 +33,6 @@ httpServer.listen(PORT, () => {
   logger.info(`🚀 Server is running on port ${PORT}`);
   blockchainService.listenForDonations();
   // Kick off NFT indexer (non-blocking)
-  nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
-  nftIndexer.subscribe();
+  //nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
+  //nftIndexer.subscribe();
 });
