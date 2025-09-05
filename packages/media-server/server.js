@@ -30,21 +30,39 @@ const config = {
 
 const nms = new NodeMediaServer(config);
 
-// Basic authentication: validate stream keys via query or stream path
-// Basic authentication: validate stream keys against backend
+// Validate stream key and notify backend that stream went LIVE
 nms.on('prePublish', async (id, StreamPath, args) => {
-  // StreamPath like /live/<streamKey>
-  const key = StreamPath.split('/').pop();
+  const key = (StreamPath || '').split('/').pop();
   try {
     const base = process.env.API_BASE || 'http://backend:8000/api';
-    const resp = await fetch(`${base}/stream/${encodeURIComponent(key)}/hls`);
-    if (!key || !resp.ok) {
+    const resp = await fetch(`${base}/nms/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key })
+    });
+    const data = resp.ok ? await resp.json().catch(() => ({ ok: false })) : { ok: false };
+    if (!key || !resp.ok || !data.ok) {
       const session = nms.getSession(id);
       session && session.reject();
     }
-  } catch {
+  } catch (e) {
     const session = nms.getSession(id);
     session && session.reject();
+  }
+});
+
+// Notify backend when stream stops
+nms.on('donePublish', async (id, StreamPath, args) => {
+  const key = (StreamPath || '').split('/').pop();
+  try {
+    const base = process.env.API_BASE || 'http://backend:8000/api';
+    await fetch(`${base}/nms/unpublish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key })
+    });
+  } catch {
+    // noop
   }
 });
 

@@ -15,6 +15,7 @@ const userSchema = new Schema({
   email: { type: String, unique: true, sparse: true },
   password: String,
   name: String,
+  username: { type: String, unique: true, sparse: true, index: true },
   displayName: String,
   about: String,
   payoutEmail: String,
@@ -37,6 +38,7 @@ const streamSchema = new Schema({
   monetizationRules: Schema.Types.Mixed,
   startedAt: Date,
   endedAt: Date,
+  viewers: { type: Number, default: 0 },
 }, { timestamps: { createdAt: 'createdAt', updatedAt: false } });
 
 const transactionSchema = new Schema({

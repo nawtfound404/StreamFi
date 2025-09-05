@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/environment';
 import { allowEvent } from '../utils/eventRateLimiter';
 import { UserModel, StreamModel, BalanceModel, connectMongo } from '../lib/mongo';
+import { getRoomSize } from '../lib/socket';
 import { UserRole } from '../types/models';
 
 interface ReactionData {
@@ -28,20 +29,41 @@ export const onSocketConnection = (io: Server) => {
     } catch (e) {
       return next(new Error('unauthorized'));
     }
-  }).on('connection', (socket: Socket) => {
+  }).on('connection', async (socket: Socket) => {
     logger.info(`New client connected: ${socket.id}`);
-    const streamId = (socket.handshake.query.streamId as string) || '';
+    const idOrKey = (socket.handshake.query.streamId as string) || '';
+    let joinedRooms: string[] = [];
   let lastEmit = 0;
   const minIntervalMs = 1000; // 1 msg/sec per user
   const burstLimit = 5; // allow small bursts
   const windowMs = 10_000; // 10 seconds
   const timestamps: number[] = [];
 
-    if (streamId) {
-      // Authorization: viewer can join any public stream room; streamer/admin can join their own admin rooms
-      // For now, enforce that only streamer of the streamId (by DB relation) or admins can join moderation room
-      socket.join(streamId);
-      logger.info(`Socket ${socket.id} joined room ${streamId}`);
+    if (idOrKey) {
+      try {
+        await connectMongo();
+        // Find by id or by key to normalize
+        const stream = await (async () => {
+          try { return await StreamModel.findById(idOrKey).select({ _id: 1, streamKey: 1 }).lean(); } catch { return null; }
+        })() || await StreamModel.findOne({ streamKey: idOrKey }).select({ _id: 1, streamKey: 1 }).lean();
+        if (stream) {
+          const id = String((stream as any)._id);
+          const key = (stream as any).streamKey as string | undefined;
+          socket.join(id);
+          joinedRooms.push(id);
+          if (key && key !== id) { socket.join(key); joinedRooms.push(key); }
+          logger.info(`Socket ${socket.id} joined rooms ${joinedRooms.join(',')}`);
+          // Notify current viewer counts
+          for (const room of joinedRooms) {
+            io.to(room).emit('viewer_count', { viewers: getRoomSize(room) });
+          }
+        } else {
+          socket.join(idOrKey);
+          joinedRooms.push(idOrKey);
+          logger.info(`Socket ${socket.id} joined room ${idOrKey}`);
+          io.to(idOrKey).emit('viewer_count', { viewers: getRoomSize(idOrKey) });
+        }
+      } catch {}
     }
 
     socket.on('reaction', async (data: ReactionData) => {
@@ -50,15 +72,16 @@ export const onSocketConnection = (io: Server) => {
       const uid = (socket as any).userId as string;
       try {
         await connectMongo();
-  const stream = await StreamModel.findById(data.streamId).lean();
-        if (!stream) return;
-        const rules = (stream as any).monetizationRules || {};
+    // Load stream to access monetization rules
+    const stream = await StreamModel.findById(data.streamId).select({ _id: 1, monetizationRules: 1 }).lean();
+    if (!stream) return;
+    const rules = (stream as any).monetizationRules || {};
         const costs = (rules.reactionCosts || {}) as Record<string, number>;
         const cost = Math.max(0, Number(costs[data.type] ?? 1));
         if (cost > 0) {
           // Atomically increment spent if it doesn't exceed deposited
           const result = await BalanceModel.findOneAndUpdate(
-            { userId: uid, streamId: (stream as any)._id, $expr: { $lte: [{ $add: ['$spent', cost] }, '$deposited'] } },
+      { userId: uid, streamId: (stream as any)._id, $expr: { $lte: [{ $add: ['$spent', cost] }, '$deposited'] } },
             { $inc: { spent: cost } },
             { new: true }
           ).lean();
@@ -86,7 +109,7 @@ export const onSocketConnection = (io: Server) => {
       if (now - lastEmit < minIntervalMs) return; // drop if under cooldown
       timestamps.push(now);
       lastEmit = now;
-      const room = payload.streamId || streamId;
+  const room = payload.streamId || idOrKey;
       if (!room || !payload.text?.trim()) return;
       io.to(room).emit('chat_message', {
         id: Date.now().toString(),
@@ -96,9 +119,15 @@ export const onSocketConnection = (io: Server) => {
       });
     });
 
-    socket.on('disconnect', () => {
-      logger.info(`Client disconnected: ${socket.id}`);
-    });
+      socket.on('disconnect', () => {
+        logger.info(`Client disconnected: ${socket.id}`);
+        // Update viewer counts for joined rooms
+        try {
+          for (const room of joinedRooms) {
+            io.to(room).emit('viewer_count', { viewers: io.sockets.adapter.rooms.get(room)?.size || 0 });
+          }
+        } catch { /* noop */ }
+      });
   });
 
   // Moderation namespace: only streamer who owns streamId or admin can join
