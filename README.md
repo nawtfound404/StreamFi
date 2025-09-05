@@ -7,7 +7,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
 [![Express](https://img.shields.io/badge/Express-4.x-000?logo=express)](https://expressjs.com/)
-[![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?logo=prisma)](https://www.prisma.io/)
 [![Socket.IO](https://img.shields.io/badge/Socket.IO-4.x-010101?logo=socketdotio)](https://socket.io/)
 [![Stripe](https://img.shields.io/badge/Stripe-ready-626CD9?logo=stripe&logoColor=white)](https://stripe.com/)
 
@@ -33,14 +32,14 @@
 ## Tech stack
 
 - Frontend: Next.js 15 (App Router), React 19, Tailwind/shadcn, RainbowKit/wagmi, hls.js, socket.io-client.
-- Backend: Node/Express, TypeScript, Prisma (PostgreSQL), Socket.IO, ethers v6.
+- Backend: Node/Express, TypeScript, MongoDB (Mongoose), Socket.IO, ethers v6.
 - Security/ops: Helmet, strict CORS, CSRF, API/socket rate limits, structured logs (Pino + correlation IDs), Prometheus metrics `/metrics`.
 
 ## Monorepo layout
 
 ```
 packages/
-	backend/      # Express + Prisma + Socket.IO API
+	backend/      # Express + MongoDB (Mongoose) + Socket.IO API
 	frontend/     # Next.js app
 	foundry-contracts/  # Solidity + Foundry (demo contracts)
 docs/           # Architecture notes
@@ -49,7 +48,7 @@ docker-compose.yml
 
 ## Environment
 
-- Backend: copy `packages/backend/.env.example` → `packages/backend/.env` and fill required values (DATABASE_URL, JWT_SECRET, JSON_RPC_PROVIDER, YELLOW_API_KEY…).
+- Backend: copy `packages/backend/.env.example` → `packages/backend/.env` and fill required values (MONGO_URL, JWT_SECRET, JSON_RPC_PROVIDER, YELLOW_API_KEY…).
 - Frontend: copy `packages/frontend/.env.example` → `packages/frontend/.env.local` (or `.env`) and set `NEXT_PUBLIC_API_BASE` to `http://localhost:8000/api`.
 
 ## Run (Docker Compose)
@@ -69,7 +68,6 @@ Services
 # backend
 cd packages/backend
 npm install
-npx prisma generate
 npm run dev
 
 # frontend (new terminal)

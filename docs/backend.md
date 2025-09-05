@@ -1,6 +1,6 @@
 # StreamFi Backend
 
-A modern, modular Node.js backend for the **StreamFi** platform, built with **TypeScript**, **Express**, **Prisma**, and **Socket.IO**. It provides a robust API for authentication, stream management, monetization, and real-time events for an interactive streaming experience.
+A modern, modular Node.js backend for the **StreamFi** platform, built with **TypeScript**, **Express**, **Mongoose (MongoDB)**, and **Socket.IO**. It provides a robust API for authentication, stream management, monetization, and real-time events for an interactive streaming experience.
 
 ---
 
@@ -9,9 +9,9 @@ A modern, modular Node.js backend for the **StreamFi** platform, built with **Ty
 * **Runtime:** Node.js (v20)
 * **Language:** TypeScript
 * **Framework:** Express.js
-* **Database ORM:** Prisma
+* **Database ORM:** Mongoose
 * **Real-time:** Socket.IO
-* **Database:** PostgreSQL
+* **Database:** MongoDB
 * **Containerization:** Docker & Docker Compose
 * **Architecture:** Feature-based modules under `src/modules/*`
 
@@ -22,7 +22,7 @@ A modern, modular Node.js backend for the **StreamFi** platform, built with **Ty
 * Modular architecture (Auth, Streams, Monetization, Notifications, Users)
 * RESTful JSON API for frontend integration
 * Real-time events (reactions) with Socket.IO, room-based by `streamId`
-* Prisma ORM with migrations and seeding support
+* MongoDB with Mongoose models (no Prisma)
 * Type-safe codebase with explicit DTOs and types
 * Dockerfile + docker-compose for local dev and production parity
 * Centralized logging and global error handling
@@ -33,17 +33,15 @@ A modern, modular Node.js backend for the **StreamFi** platform, built with **Ty
 
 ```
 streamfi-backend/
-├── prisma/
-│   ├── schema.prisma       # Prisma schema (models + relations)
-│   ├── migrations/         # Generated SQL migrations
-│   └── seed.ts             # Optional seeding script
+├── prisma/ (deprecated)
+│   └── README.md           # Prisma removed; using MongoDB via Mongoose
 ├── src/
 │   ├── app.ts              # Express app setup (middleware + error handler)
 │   ├── server.ts           # Entry point (HTTP server + Socket.IO)
 │   ├── config/
 │   │   └── environment.ts  # Env parsing & validation (Zod recommended)
 │   ├── lib/
-│   │   └── prisma.ts       # Singleton Prisma client export
+│   │   └── mongo.ts        # Mongoose connection and models
 │   ├── modules/            # Feature modules (auth, stream, monetization, ...)
 │   ├── routes/             # Central router mounting module routers
 │   ├── services/           # Shared services (overlay, blockchain)
@@ -64,7 +62,7 @@ Create a `.env` in the `streamfi-backend/` root (copy from `.env.example`):
 
 ```env
 PORT=8000
-DATABASE_URL="postgresql://USER:PASSWORD@db:5432/streamfi?schema=public"
+DATABASE_URL="mongodb://db:27017/streamfi"
 JWT_SECRET="your-secret"
 JWT_EXPIRES_IN="1d"
 # other keys: STRIPE_SECRET_KEY, JSON_RPC_PROVIDER, STREAMFI_CONTRACT_ADDRESS, ADMIN_PRIVATE_KEY, etc.
@@ -87,17 +85,9 @@ docker compose up --build
 * Backend will be available on `http://localhost:<PORT>` (default 8000).
 * Logs will stream into your terminal.
 
-### Prisma Migrations / Seeding
+### Database
 
-Open a new terminal once containers are up:
-
-```bash
-# Run migrations (interactive with --dev)
-docker compose exec backend npx prisma migrate dev --name <migration-name>
-
-# Seed DB
-docker compose exec backend npx prisma db seed
-```
+No migration step is required. Mongoose models are defined in `src/lib/mongo.ts`.
 
 ---
 
@@ -152,16 +142,16 @@ Server-side logic is handled in `src/services/overlay.service.ts` (join room on 
 
 ---
 
-## Prisma Schema (high level)
+## Data Models (high level)
 
-`prisma/schema.prisma` contains models such as:
+`src/lib/mongo.ts` defines models such as:
 
 * `User` — credentials, profile, role, walletAddress, relations
 * `Stream` — title, streamKey, ingestUrl, status, streamer relation
 * `Transaction` / `Donation` / `NFTSale` / `Payout` — monetization records
 * `Notification` — user notifications
 
-Manage schema changes with `prisma migrate`.
+Manage schema changes by updating the Mongoose schemas.
 
 ---
 
@@ -172,7 +162,7 @@ Manage schema changes with `prisma migrate`.
 * **Central Router:** `src/routes/index.ts` mounts all module routers.
 * **Type Safety:** Use interfaces and DTOs for request/response contracts.
 * **Error Handling:** Global error handler formats and logs errors in `app.ts`.
-* **Singleton Prisma:** Export a single Prisma client from `src/lib/prisma.ts` to avoid connection leaks.
+* **Mongo Connection:** Reuse the shared Mongoose connection and models from `src/lib/mongo.ts`.
 * **Socket.IO:** Initialize in `server.ts` with `http.createServer(app)` and attach Socket.IO instance; pass the instance to overlay service.
 
 ---
@@ -186,8 +176,7 @@ Manage schema changes with `prisma migrate`.
   "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/server.ts",
   "build": "tsc -p tsconfig.json",
   "start": "node -r tsconfig-paths/register dist/server.js",
-  "prisma:generate": "prisma generate",
-  "prisma:migrate": "prisma migrate dev"
+  // Prisma scripts removed
 }
 ```
 

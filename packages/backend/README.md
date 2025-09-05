@@ -1,6 +1,6 @@
 # StreamFi Backend
 
-A modern, modular Node.js backend for the **StreamFi** platform, built with **TypeScript, Express, Prisma, and Socket.IO**.
+A modern, modular Node.js backend for the **StreamFi** platform, built with **TypeScript, Express, Mongoose (MongoDB), and Socket.IO**.
 It provides a robust API for authentication, stream management, monetization, and delivers real-time events for an interactive user experience.
 
 ---
@@ -10,9 +10,9 @@ It provides a robust API for authentication, stream management, monetization, an
 * **Runtime:** Node.js (v18+)
 * **Language:** TypeScript
 * **Framework:** Express.js
-* **Database ORM:** Prisma
+* **Database ORM:** Mongoose
 * **Real-time:** Socket.IO
-* **Database:** PostgreSQL
+* **Database:** MongoDB
 * **Containerization:** Docker & Docker Compose
 * **Architecture:** Feature-based modules under `src/modules/*`
 
@@ -22,16 +22,15 @@ It provides a robust API for authentication, stream management, monetization, an
 
 ```
 backend/
-├── prisma/
-│   ├── schema.prisma          # Database models and relations
-│   └── migrations/            # Generated SQL migration files
+├── prisma/ (deprecated)
+│   └── README.md              # Prisma removed; using MongoDB via Mongoose
 ├── src/
 │   ├── app.ts                 # Express app setup and middleware
 │   ├── server.ts              # Main entry point
 │   ├── config/
 │   │   └── environment.ts     # Environment variables validation
 │   ├── lib/
-│   │   └── prisma.ts          # Prisma Client instance
+│   │   └── mongo.ts           # Mongoose connection & models
 │   ├── modules/
 │   │   ├── auth/              # User registration and login
 │   │   ├── monetization/      # Donations, NFT sales, and payouts
@@ -76,11 +75,9 @@ cp .env.example .env
 
 Required: `DATABASE_URL`, `JWT_SECRET`, `JSON_RPC_PROVIDER`, `CREATOR_VAULT_ADDRESS`, `ADMIN_PRIVATE_KEY`, `YELLOW_API_KEY`.
 
-### 4. Run Database Migrations
+### 4. Database
 
-```bash
-npx prisma migrate dev
-```
+This project uses MongoDB. Ensure your `DATABASE_URL` points to a MongoDB instance (e.g., mongodb://localhost:27017/streamfi).
 
 ### 5. Start the Development Server
 

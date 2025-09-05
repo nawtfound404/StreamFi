@@ -26,6 +26,8 @@ EXPOSE 8000
 
 # Copy entrypoint and run it (no prisma migrate for Mongo)
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh
+# Normalize line endings to avoid CRLF issues on Alpine, then make executable
+RUN sed -i 's/\r$//' ./docker-entrypoint.sh \
+	&& chmod +x ./docker-entrypoint.sh
 
 ENTRYPOINT ["./docker-entrypoint.sh"]

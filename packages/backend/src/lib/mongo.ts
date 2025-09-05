@@ -77,6 +77,15 @@ const muteSchema = new Schema({
   reason: String,
 }, { timestamps: { createdAt: 'createdAt', updatedAt: false } });
 
+// Streamer-defined reaction catalog (custom reactions with pricing in paise)
+const reactionSchema = new Schema({
+  streamerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  key: { type: String, required: true },
+  label: { type: String, required: true },
+  priceInPaise: { type: Number, required: true, min: 0 },
+}, { timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' } });
+reactionSchema.index({ streamerId: 1, key: 1 }, { unique: true });
+
 // Per-stream wallet token escrow tracking (off-chain accounting)
 const balanceSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -104,6 +113,7 @@ export const PayoutRequestModel = models.PayoutRequest || model('PayoutRequest',
 export const NotificationModel = models.Notification || model('Notification', notificationSchema);
 export const ChatMessageModel = models.ChatMessage || model('ChatMessage', chatMessageSchema);
 export const MuteModel = models.Mute || model('Mute', muteSchema);
+export const ReactionModel = models.Reaction || model('Reaction', reactionSchema);
 export const BalanceModel = models.Balance || model('Balance', balanceSchema);
 export const NftTokenModel = models.NftToken || model('NftToken', nftTokenSchema);
 export const NftSyncStateModel = models.NftSyncState || model('NftSyncState', nftSyncStateSchema);

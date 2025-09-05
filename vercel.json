@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "env": {
+    "NEXT_PUBLIC_API_BASE": "${NEXT_PUBLIC_API_BASE}",
+    "NEXT_PUBLIC_HLS_BASE": "${NEXT_PUBLIC_HLS_BASE}",
+    "NEXT_PUBLIC_CHAT_WS_BASE": "${NEXT_PUBLIC_CHAT_WS_BASE}"
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "${BACKEND_URL}/api/:path*" },
+  { "source": "/socket.io/:path*", "destination": "${BACKEND_URL}/socket.io/:path*" },
+  { "source": "/stream/:path*", "destination": "${BACKEND_URL}/stream/:path*" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)\\.m3u8",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.apple.mpegurl" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.ts",
+      "headers": [
+        { "key": "Content-Type", "value": "video/mp2t" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
+  ]
+}

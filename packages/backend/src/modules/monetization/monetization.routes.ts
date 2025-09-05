@@ -3,6 +3,7 @@ import { getSummary, getDonations, getNfts, getPayouts } from './monetization.co
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { emitToStream } from '../../lib/socket';
 import { TransactionModel, StreamModel, PayoutRequestModel, BalanceModel, connectMongo } from '../../lib/mongo';
+import { requireAdmin, requireStreamer } from '../../middlewares/rbac.middleware';
 import mongoose from 'mongoose';
 // Use dynamic import for json2csv to avoid type resolution issues
 const router = Router();
@@ -74,7 +75,7 @@ router.post('/settle', authMiddleware, async (req, res) => {
 });
 
 // Donations CSV export for a streamer (auth required). Query: streamerId? defaults to current user
-router.get('/donations.csv', async (req, res) => {
+router.get('/donations.csv', requireStreamer, async (req, res) => {
 	try {
 		await connectMongo();
 		const streamerId = (req.query.streamerId as string) || (req as any).user?.id;
@@ -114,7 +115,7 @@ router.get('/donations.csv', async (req, res) => {
 
 	// ----- Payout Requests -----
 	// POST /monetization/payouts -> create payout request
-	router.post('/payouts', async (req, res) => {
+	router.post('/payouts', requireStreamer, async (req, res) => {
 		try {
 			await connectMongo();
 			const streamerId = (req as any).user?.id as string;
@@ -134,7 +135,7 @@ router.get('/donations.csv', async (req, res) => {
 	});
 
 	// GET /monetization/payouts -> list payout requests for current user
-	router.get('/payouts', async (req, res) => {
+	router.get('/payouts', requireStreamer, async (req, res) => {
 		try {
 			await connectMongo();
 			const streamerId = (req as any).user?.id as string;
@@ -147,7 +148,7 @@ router.get('/donations.csv', async (req, res) => {
 	});
 
 	// PATCH /monetization/payouts/:id/status -> admin updates status
-	router.patch('/payouts/:id/status', async (req, res) => {
+	router.patch('/payouts/:id/status', requireAdmin, async (req, res) => {
 		try {
 			await connectMongo();
 			const { id } = req.params;
