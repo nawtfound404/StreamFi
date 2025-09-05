@@ -1,5 +1,5 @@
 // Admin & Moderation wired to backend
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api';
 
 async function post(path: string, body: unknown) {
   const token = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('streamfi-auth') || '{}')?.state?.session?.token : undefined;
@@ -15,11 +15,9 @@ async function post(path: string, body: unknown) {
 
 export const admin = {
   muteUser(userId: string) {
-    if (!API_BASE) return true;
     return post('/admin/mute', { userId });
   },
   banUser(userId: string) {
-    if (!API_BASE) return true;
     return post('/admin/ban', { userId });
   },
 };

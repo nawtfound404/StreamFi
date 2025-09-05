@@ -9,6 +9,7 @@ const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const crypto_1 = __importDefault(require("crypto"));
 const csurf_1 = __importDefault(require("csurf"));
+const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const prom_client_1 = __importDefault(require("prom-client"));
 const response_time_1 = __importDefault(require("response-time"));
 const logger_1 = require("./utils/logger");
@@ -49,6 +50,8 @@ app.use((req, res, next) => {
 });
 app.use(express_1.default.json({ limit: '1mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '1mb' }));
+// Needed for csurf with cookie-based secrets
+app.use((0, cookie_parser_1.default)());
 app.use(rateLimiter_1.rateLimiter);
 // Metrics
 prom_client_1.default.collectDefaultMetrics();

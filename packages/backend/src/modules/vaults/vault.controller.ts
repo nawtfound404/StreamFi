@@ -19,7 +19,6 @@ export const createVault = async (req: AuthRequest, res: Response) => {
   await connectMongo();
   const user = await UserModel.findById(userId).lean();
 
-    // ⚠️ Only works if you added `vaultId` to your Prisma schema.
     if ((user as any)?.vaultId) {
       return res.status(409).json({ message: 'User already has a vault' });
     }

@@ -66,6 +66,8 @@ services:
         condition: service_started
     env_file:
       - ./packages/frontend/.env.local
+    environment:
+      BACKEND_URL: http://backend:8000
     networks:
       - streamfi-net
 

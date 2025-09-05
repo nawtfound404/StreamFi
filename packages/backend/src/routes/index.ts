@@ -10,6 +10,7 @@ import adminRoutes from '../modules/admin/admin.routes';
 import chatRoutes from '../modules/stream/chat.routes';
 import paymentsRoutes from '../modules/monetization/payments.routes';
 import yellowRoutes from '../modules/yellow/yellow.routes';
+import reactionsRoutes from '../modules/reactions/reactions.routes';
 
 const router = Router();
 router.use('/auth', authBurstLimiter, authRoutes);
@@ -22,5 +23,6 @@ router.use('/admin', adminRoutes);
 router.use('/chat', chatRoutes);
 router.use('/payments', authBurstLimiter, paymentsRoutes);
 router.use('/yellow', yellowRoutes);
+router.use('/reactions', reactionsRoutes);
 
 export default router;

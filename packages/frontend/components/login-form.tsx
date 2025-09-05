@@ -100,10 +100,9 @@ export function LoginForm({
         </div>
       </form>
       <div className="text-muted-foreground *:[a]:hover:text-primary text-center text-xs text-balance *:[a]:underline *:[a]:underline-offset-4">
-        Dummy login creds:
-        <div className="mt-1">demo@streamfi.dev / demo123</div>
-        <div>creator@streamfi.dev / stream123</div>
-        <div>admin@streamfi.dev / admin123</div>
+        Seeded login creds (local):
+        <div className="mt-1">creator@streamfi.local / creator123</div>
+        <div>admin@streamfi.local / admin123</div>
         <div className="mt-2">By clicking continue, you agree to our <a href="#">Terms of Service</a>{" "}
         and <a href="#">Privacy Policy</a>.
         </div>
