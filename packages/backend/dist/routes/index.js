@@ -15,6 +15,7 @@ const admin_routes_1 = __importDefault(require("../modules/admin/admin.routes"))
 const chat_routes_1 = __importDefault(require("../modules/stream/chat.routes"));
 const payments_routes_1 = __importDefault(require("../modules/monetization/payments.routes"));
 const yellow_routes_1 = __importDefault(require("../modules/yellow/yellow.routes"));
+const reactions_routes_1 = __importDefault(require("../modules/reactions/reactions.routes"));
 const router = (0, express_1.Router)();
 router.use('/auth', rateLimiter_1.authBurstLimiter, auth_routes_1.default);
 router.use('/users', user_routes_1.default);
@@ -26,5 +27,6 @@ router.use('/admin', admin_routes_1.default);
 router.use('/chat', chat_routes_1.default);
 router.use('/payments', rateLimiter_1.authBurstLimiter, payments_routes_1.default);
 router.use('/yellow', yellow_routes_1.default);
+router.use('/reactions', reactions_routes_1.default);
 exports.default = router;
 //# sourceMappingURL=index.js.map

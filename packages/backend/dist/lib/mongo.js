@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NftSyncStateModel = exports.NftTokenModel = exports.BalanceModel = exports.MuteModel = exports.ChatMessageModel = exports.NotificationModel = exports.PayoutRequestModel = exports.TransactionModel = exports.StreamModel = exports.UserModel = void 0;
+exports.NftSyncStateModel = exports.NftTokenModel = exports.BalanceModel = exports.ReactionModel = exports.MuteModel = exports.ChatMessageModel = exports.NotificationModel = exports.PayoutRequestModel = exports.TransactionModel = exports.StreamModel = exports.UserModel = void 0;
 exports.connectMongo = connectMongo;
 const mongoose_1 = __importStar(require("mongoose"));
 const environment_1 = require("../config/environment");
@@ -106,6 +106,14 @@ const muteSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', unique: true, required: true },
     reason: String,
 }, { timestamps: { createdAt: 'createdAt', updatedAt: false } });
+// Streamer-defined reaction catalog (custom reactions with pricing in paise)
+const reactionSchema = new mongoose_1.Schema({
+    streamerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    key: { type: String, required: true },
+    label: { type: String, required: true },
+    priceInPaise: { type: Number, required: true, min: 0 },
+}, { timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' } });
+reactionSchema.index({ streamerId: 1, key: 1 }, { unique: true });
 // Per-stream wallet token escrow tracking (off-chain accounting)
 const balanceSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -130,6 +138,7 @@ exports.PayoutRequestModel = mongoose_1.models.PayoutRequest || (0, mongoose_1.m
 exports.NotificationModel = mongoose_1.models.Notification || (0, mongoose_1.model)('Notification', notificationSchema);
 exports.ChatMessageModel = mongoose_1.models.ChatMessage || (0, mongoose_1.model)('ChatMessage', chatMessageSchema);
 exports.MuteModel = mongoose_1.models.Mute || (0, mongoose_1.model)('Mute', muteSchema);
+exports.ReactionModel = mongoose_1.models.Reaction || (0, mongoose_1.model)('Reaction', reactionSchema);
 exports.BalanceModel = mongoose_1.models.Balance || (0, mongoose_1.model)('Balance', balanceSchema);
 exports.NftTokenModel = mongoose_1.models.NftToken || (0, mongoose_1.model)('NftToken', nftTokenSchema);
 exports.NftSyncStateModel = mongoose_1.models.NftSyncState || (0, mongoose_1.model)('NftSyncState', nftSyncStateSchema);

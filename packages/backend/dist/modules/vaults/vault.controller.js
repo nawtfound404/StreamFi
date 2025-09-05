@@ -16,7 +16,6 @@ const createVault = async (req, res) => {
     try {
         await (0, mongo_1.connectMongo)();
         const user = await mongo_1.UserModel.findById(userId).lean();
-        // ⚠️ Only works if you added `vaultId` to your Prisma schema.
         if (user?.vaultId) {
             return res.status(409).json({ message: 'User already has a vault' });
         }
