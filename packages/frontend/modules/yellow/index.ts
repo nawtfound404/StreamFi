@@ -1,4 +1,11 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api';
+
+type Order = {
+  symbol: string;
+  side: 'buy' | 'sell';
+  quantity: number;
+  price?: number;
+};
 
 function authHeaders(): Record<string,string> {
   try {
@@ -13,7 +20,7 @@ export const yellow = {
     if (!res.ok) throw new Error('Market fetch failed');
     return res.json();
   },
-  async placeOrder(order: any) {
+  async placeOrder(order: Order) {
   const csrfRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
   const csrfToken = csrfRes.ok ? (await csrfRes.json()).csrfToken as string : undefined;
   const res = await fetch(`${API_BASE}/yellow/orders`, { method: 'POST', headers: { ...authHeaders(), ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) }, credentials: 'include', body: JSON.stringify(order) });

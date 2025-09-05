@@ -36,10 +36,9 @@ const demoPayouts: Payout[] = [
   { id: "p2", amount: 120, currency: "USD", status: "paid", time: iso(4320) },
 ]
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api'
 
 async function fetchFromApi<T>(path: string): Promise<T | null> {
-  if (!API_BASE) return null
   try {
     const res = await fetch(`${API_BASE}${path}`)
     if (!res.ok) return null
@@ -57,7 +56,6 @@ export const monetization = {
     return { ok: true }
   },
   async upiIntent(amount: number, currency = 'INR', streamId?: string, userId?: string) {
-    if (!API_BASE) return null;
   const tokenRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
   const csrfToken = tokenRes.ok ? (await tokenRes.json()).csrfToken as string : undefined;
   const res = await fetch(`${API_BASE}/payments/upi/intent`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) }, body: JSON.stringify({ amount, currency, streamId, userId }) });
@@ -65,7 +63,6 @@ export const monetization = {
     return res.json() as Promise<{ intentId: string; deeplink: string }>;
   },
   async paypalIntent(amount: number, currency = 'USD', streamId?: string, userId?: string) {
-    if (!API_BASE) return null;
   const tokenRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
   const csrfToken = tokenRes.ok ? (await tokenRes.json()).csrfToken as string : undefined;
   const res = await fetch(`${API_BASE}/payments/paypal/intent`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) }, body: JSON.stringify({ amount, currency, streamId, userId }) });
@@ -73,7 +70,6 @@ export const monetization = {
     return res.json() as Promise<{ orderId: string; approveUrl: string }>;
   },
   async createPayout(amount: number, currency = 'USD', note?: string) {
-    if (!API_BASE) return null;
     const token = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('streamfi-auth') || '{}')?.state?.session?.token : undefined;
   const tokenRes = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
   const csrfToken = tokenRes.ok ? (await tokenRes.json()).csrfToken as string : undefined;
@@ -108,8 +104,9 @@ export const monetization = {
 }
 
 export async function createStripeDonation(amount: number, currency = 'USD') {
-  const base = process.env.NEXT_PUBLIC_API_BASE || '';
-  const res = await fetch(`${base}/api/payments/stripe/create-payment-intent`, {
+  const base = process.env.NEXT_PUBLIC_API_BASE || '/api';
+  const prefix = base.endsWith('/api') ? base : `${base}/api`;
+  const res = await fetch(`${prefix}/payments/stripe/create-payment-intent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ amount, currency }),
