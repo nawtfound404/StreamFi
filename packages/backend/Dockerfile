@@ -8,27 +8,28 @@ WORKDIR /usr/src/app
 RUN apk add --no-cache openssl
 
 # Copy package files first to leverage Docker's build cache
-# These paths are relative to the build context (the project root)
-COPY packages/backend/package*.json ./
-RUN npm install
+# Build context is packages/backend
+COPY package*.json ./
+RUN npm ci || npm install
 
-# Copy the backend's source code
-COPY packages/backend/src ./src
-COPY packages/backend/prisma ./prisma
-COPY packages/backend/tsconfig.json ./
-
-# --- THE DEFINITIVE FIX ---
-# Create a new directory for our contract ABIs inside the source code
-RUN mkdir -p src/lib/abi
-# Copy ONLY the essential Nitrolite.json file from the sibling contracts package
-COPY packages/foundry-contracts/out/Nitrolite.sol/Nitrolite.json ./src/lib/abi/Nitrolite.json
+# Copy the backend's source code and config
+COPY tsconfig.json ./
+COPY prisma ./prisma
+COPY src ./src
 
 # Generate Prisma client and build the TypeScript project
 RUN npx prisma generate
 RUN npm run build
 
+# Ensure JSON ABI is available at runtime (TS can emit require for JSON)
+# ABI is a TS module and will be compiled into dist
+
+# Copy entrypoint to run migrations on startup
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
+
 # Expose the application port
 EXPOSE 8000
 
-# The final command to run the application
-CMD [ "node", "-r", "tsconfig-paths/register", "dist/server.js" ]
+# Run migrations and start the app
+ENTRYPOINT ["/usr/src/app/docker-entrypoint.sh"]
