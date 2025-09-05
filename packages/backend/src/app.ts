@@ -84,6 +84,15 @@ app.get('/api/csrf', csrfProtection, (req: Request, res: Response) => {
 	res.setHeader('x-csrf-token', token);
 	return res.json({ csrfToken: token });
 });
+// Root info endpoint (useful for platform health checks like Render)
+app.get('/', (_req, res) => {
+	return res.status(200).json({
+		name: 'StreamFi API',
+		status: 'UP',
+		health: '/health',
+		apiBase: '/api',
+	});
+});
 app.get('/health', (_req, res) => res.status(200).json({ status: 'UP' }));
 app.get('/metrics', async (_req, res) => {
 	res.set('Content-Type', client.register.contentType);
