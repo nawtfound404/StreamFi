@@ -8,6 +8,7 @@ const monetization_controller_1 = require("./monetization.controller");
 const auth_middleware_1 = require("../../middlewares/auth.middleware");
 const socket_1 = require("../../lib/socket");
 const mongo_1 = require("../../lib/mongo");
+const rbac_middleware_1 = require("../../middlewares/rbac.middleware");
 const mongoose_1 = __importDefault(require("mongoose"));
 // Use dynamic import for json2csv to avoid type resolution issues
 const router = (0, express_1.Router)();
@@ -79,7 +80,7 @@ router.post('/settle', auth_middleware_1.authMiddleware, async (req, res) => {
     }
 });
 // Donations CSV export for a streamer (auth required). Query: streamerId? defaults to current user
-router.get('/donations.csv', async (req, res) => {
+router.get('/donations.csv', rbac_middleware_1.requireStreamer, async (req, res) => {
     try {
         await (0, mongo_1.connectMongo)();
         const streamerId = req.query.streamerId || req.user?.id;
@@ -122,7 +123,7 @@ router.get('/donations.csv', async (req, res) => {
 });
 // ----- Payout Requests -----
 // POST /monetization/payouts -> create payout request
-router.post('/payouts', async (req, res) => {
+router.post('/payouts', rbac_middleware_1.requireStreamer, async (req, res) => {
     try {
         await (0, mongo_1.connectMongo)();
         const streamerId = req.user?.id;
@@ -143,7 +144,7 @@ router.post('/payouts', async (req, res) => {
     }
 });
 // GET /monetization/payouts -> list payout requests for current user
-router.get('/payouts', async (req, res) => {
+router.get('/payouts', rbac_middleware_1.requireStreamer, async (req, res) => {
     try {
         await (0, mongo_1.connectMongo)();
         const streamerId = req.user?.id;
@@ -156,7 +157,7 @@ router.get('/payouts', async (req, res) => {
     }
 });
 // PATCH /monetization/payouts/:id/status -> admin updates status
-router.patch('/payouts/:id/status', async (req, res) => {
+router.patch('/payouts/:id/status', rbac_middleware_1.requireAdmin, async (req, res) => {
     try {
         await (0, mongo_1.connectMongo)();
         const { id } = req.params;

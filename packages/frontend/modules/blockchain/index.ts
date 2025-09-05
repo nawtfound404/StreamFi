@@ -1,7 +1,7 @@
 // Blockchain helpers for wallet deposit/spend/settle
 export type MintRequest = never;
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api';
 
 function getAuthHeaders(): Record<string, string> {
   try {
@@ -21,12 +21,6 @@ async function postToApi<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`POST ${path} failed`);
-  return res.json() as Promise<T>;
-}
-
-async function fetchFromApi<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { credentials: 'include', headers: getAuthHeaders() as Record<string,string> });
-  if (!res.ok) throw new Error(`GET ${path} failed`);
   return res.json() as Promise<T>;
 }
 
