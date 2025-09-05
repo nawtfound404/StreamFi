@@ -24,8 +24,8 @@ async function main() {
     data: {
         title: "Alice's Debut Stream!",
         streamerId: streamer.id,
-        ingestUrl: "rtmp://ingest.streamfi.io/live",
-        streamKey: "sk_alice_123456789"
+  ingestUrl: process.env.NMS_RTMP_URL || 'rtmp://localhost:1935/live',
+  streamKey: "sk_alice_123456789"
     }
   })
 

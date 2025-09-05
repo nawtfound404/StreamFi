@@ -1,21 +1,20 @@
 # StreamFi/docker-compose.yml
 
 services:
-  # Database Service (moved first for dependency order)
+  # Database Service (MongoDB)
   db:
-    image: postgres:14-alpine
+    image: mongo:7
     ports:
-      - "5433:5432"
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data/
+      - mongo_data:/data/db
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: streamfi
+      MONGO_INITDB_ROOT_USERNAME: user
+      MONGO_INITDB_ROOT_PASSWORD: password
     networks:
       - streamfi-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d streamfi"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,8 +27,8 @@ services:
     ports:
       - "1935:1935"   # RTMP ingest
       - "8081:8080"   # HLS HTTP (host:container)
-    environment:
-      API_BASE: "http://backend:8000/api"
+    env_file:
+      - ./packages/backend/.env
     networks:
       - streamfi-net
 
@@ -40,7 +39,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-      - "5555:5555"  # Prisma Studio port
     env_file:
       - ./packages/backend/.env
     depends_on:
@@ -48,17 +46,7 @@ services:
         condition: service_healthy
       nms:
         condition: service_started
-    environment:
-      DATABASE_URL: "postgresql://user:password@db:5432/streamfi?schema=public"
-      NMS_RTMP_URL: "rtmp://nms:1935/live"
-      NMS_HLS_BASE: "http://localhost:8081"  # External access URL
-      NMS_HLS_TEMPLATE: "/live/{key}/index.m3u8"
-      JWT_SECRET: "dev-secret"
-      JSON_RPC_PROVIDER: "https://rpc.ankr.com/eth_sepolia"
-      CREATOR_VAULT_ADDRESS: "0x0000000000000000000000000000000000000000"
-      ADMIN_PRIVATE_KEY: "0x1111111111111111111111111111111111111111111111111111111111111111"
-      YELLOW_API_KEY: "test"
-      NODE_ENV: "development"
+    environment: {}
     networks:
       - streamfi-net
 
@@ -68,20 +56,16 @@ services:
       context: ./packages/frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE: "http://localhost:8000/api"  # External access URL
-        NEXT_PUBLIC_HLS_BASE: "http://localhost:8081"
-        NEXT_PUBLIC_CHAT_WS_BASE: "ws://localhost:8000"
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
+        NEXT_PUBLIC_HLS_BASE: ${NEXT_PUBLIC_HLS_BASE}
+        NEXT_PUBLIC_CHAT_WS_BASE: ${NEXT_PUBLIC_CHAT_WS_BASE}
     ports:
       - "3000:3000"
     depends_on:
       backend:
         condition: service_started
-    environment:
-      # Override build args with runtime environment for client-side access
-      NEXT_PUBLIC_API_BASE: "http://localhost:8000/api"
-      NEXT_PUBLIC_HLS_BASE: "http://localhost:8081"
-      NEXT_PUBLIC_CHAT_WS_BASE: "ws://localhost:8000"
-      NODE_ENV: "development"
+    env_file:
+      - ./packages/frontend/.env.local
     networks:
       - streamfi-net
 
@@ -90,4 +74,4 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  mongo_data:

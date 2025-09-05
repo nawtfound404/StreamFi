@@ -2,7 +2,7 @@ import { Router } from 'express';
 import Stripe from 'stripe';
 import { env } from '../../config/environment';
 import express from 'express';
-import { prisma } from '../../lib/prisma';
+import { TransactionModel, connectMongo } from '../../lib/mongo';
 import { emitToStream } from '../../lib/socket';
 import crypto from 'crypto';
 
@@ -36,7 +36,8 @@ router.post('/stripe/webhook', express.raw({ type: 'application/json' }), async 
       };
       if (pi.metadata?.userId) txData.userId = String(pi.metadata.userId);
       if (pi.metadata?.streamId) txData.streamId = String(pi.metadata.streamId);
-      const tx = await prisma.transaction.create({ data: txData }).catch(() => void 0);
+  await connectMongo();
+  const tx = await TransactionModel.create(txData).catch(() => void 0);
       if (pi.metadata?.streamId) {
         emitToStream(String(pi.metadata.streamId), 'donation', {
           amount: txData.amount,
@@ -71,16 +72,17 @@ upiRouter.post('/webhook', async (req, res) => {
   const evt = req.body as any;
   if (evt?.type === 'upi.payment_succeeded') {
     const meta = evt.data || {};
-    const tx = await prisma.transaction.create({ data: {
+    await connectMongo();
+    const tx = await TransactionModel.create({
       amount: Number(meta.amount || 0),
       currency: String(meta.currency || 'INR').toUpperCase(),
       type: 'DONATION',
       status: 'COMPLETED',
       provider: 'UPI',
       userId: String(meta.userId || ''),
-      streamId: meta.streamId ? String(meta.streamId) : null,
+      streamId: meta.streamId ? String(meta.streamId) : undefined,
       metadata: meta,
-    }}).catch(()=>null);
+    }).catch(()=>null as any);
     if (meta.streamId) emitToStream(String(meta.streamId), 'donation', { amount: Number(meta.amount||0), currency: String(meta.currency||'INR').toUpperCase(), from: String(meta.userId||'anon') });
   }
   return res.json({ ok: true });
@@ -108,16 +110,17 @@ paypalRouter.post('/webhook', async (req, res) => {
     const meta = resource.custom_id ? JSON.parse(resource.custom_id) : {};
     const amountVal = Number(resource?.amount?.value || meta?.amount || 0);
     const currency = String(resource?.amount?.currency_code || meta?.currency || 'USD').toUpperCase();
-    const tx = await prisma.transaction.create({ data: {
+    await connectMongo();
+    const tx = await TransactionModel.create({
       amount: amountVal,
       currency,
       type: 'DONATION',
       status: 'COMPLETED',
       provider: 'PAYPAL',
       userId: String(meta.userId || ''),
-      streamId: meta.streamId ? String(meta.streamId) : null,
+      streamId: meta.streamId ? String(meta.streamId) : undefined,
       metadata: resource,
-    }}).catch(()=>null);
+    }).catch(()=>null as any);
     if (meta.streamId) emitToStream(String(meta.streamId), 'donation', { amount: amountVal, currency, from: String(meta.userId||'anon') });
   }
   return res.json({ ok: true });

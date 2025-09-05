@@ -7,7 +7,7 @@ exports.authMiddleware = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const environment_1 = require("../config/environment");
 const logger_1 = require("../utils/logger");
-const prisma_1 = require("../lib/prisma");
+const mongo_1 = require("../lib/mongo");
 const authMiddleware = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -15,14 +15,15 @@ const authMiddleware = async (req, res, next) => {
     }
     const token = authHeader.split(' ')[1];
     try {
+        await (0, mongo_1.connectMongo)();
         const decoded = jsonwebtoken_1.default.verify(token, environment_1.env.jwt.secret);
         // Enforce ban: check DB for banned flag
-        const user = await prisma_1.prisma.user.findUnique({ where: { id: decoded.id }, select: { id: true, role: true, banned: true } });
+        const user = await mongo_1.UserModel.findById(decoded.id).select('role banned').lean();
         if (!user)
             return res.status(401).json({ message: 'Unauthorized: User not found' });
         if (user.banned)
             return res.status(403).json({ message: 'Account banned' });
-        req.user = { id: user.id, role: user.role };
+        req.user = { id: String(user._id), role: user.role };
         next();
     }
     catch (error) {

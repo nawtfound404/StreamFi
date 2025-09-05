@@ -1,10 +1,2 @@
-import { PrismaClient } from '@prisma/client';
-
-// This prevents multiple instances of Prisma Client in development
-declare global {
-  var prisma: PrismaClient | undefined;
-}
-
-export const prisma = global.prisma || new PrismaClient();
-
-if (process.env.NODE_ENV !== 'production') global.prisma = prisma;
+// Prisma has been removed. This file remains only to avoid stray imports.
+export const prisma: any = {};

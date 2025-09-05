@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const prisma_1 = require("../../lib/prisma");
+const mongo_1 = require("../../lib/mongo");
 const auth_middleware_1 = require("../../middlewares/auth.middleware");
 const router = (0, express_1.Router)();
 // Simple role-check middleware for admin-only routes
@@ -14,28 +14,32 @@ router.post('/mute', auth_middleware_1.authMiddleware, requireAdmin, async (req,
     const { userId, reason } = req.body;
     if (!userId)
         return res.status(400).json({ message: 'userId required' });
-    await prisma_1.prisma.mute.upsert({ where: { userId }, update: { reason }, create: { userId, reason } });
+    await (0, mongo_1.connectMongo)();
+    await mongo_1.MuteModel.updateOne({ userId }, { $set: { reason } }, { upsert: true });
     return res.status(200).json({ ok: true });
 });
 router.post('/ban', auth_middleware_1.authMiddleware, requireAdmin, async (req, res) => {
     const { userId, reason } = req.body;
     if (!userId)
         return res.status(400).json({ message: 'userId required' });
-    await prisma_1.prisma.user.update({ where: { id: userId }, data: { banned: true, bannedAt: new Date(), banReason: reason } });
+    await (0, mongo_1.connectMongo)();
+    await mongo_1.UserModel.updateOne({ _id: userId }, { $set: { banned: true, bannedAt: new Date(), banReason: reason } });
     return res.status(200).json({ ok: true });
 });
 router.post('/unban', auth_middleware_1.authMiddleware, requireAdmin, async (req, res) => {
     const { userId } = req.body;
     if (!userId)
         return res.status(400).json({ message: 'userId required' });
-    await prisma_1.prisma.user.update({ where: { id: userId }, data: { banned: false, bannedAt: null, banReason: null } });
+    await (0, mongo_1.connectMongo)();
+    await mongo_1.UserModel.updateOne({ _id: userId }, { $set: { banned: false, bannedAt: null, banReason: null } });
     return res.status(200).json({ ok: true });
 });
 router.post('/unmute', auth_middleware_1.authMiddleware, requireAdmin, async (req, res) => {
     const { userId } = req.body;
     if (!userId)
         return res.status(400).json({ message: 'userId required' });
-    await prisma_1.prisma.mute.delete({ where: { userId } }).catch(() => void 0);
+    await (0, mongo_1.connectMongo)();
+    await mongo_1.MuteModel.deleteOne({ userId }).catch(() => void 0);
     return res.status(200).json({ ok: true });
 });
 exports.default = router;

@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { env } from '../config/environment';
-import { prisma } from '../lib/prisma';
+import { NftTokenModel, connectMongo } from '../lib/mongo';
 import { logger } from '../utils/logger';
 import NitroliteABI from './abi/Nitrolite';
 
@@ -164,9 +164,8 @@ class BlockchainService {
 
   /** Faster owner lookup via DB index if available. */
   public async getTokensByOwnerIndexed(owner: string): Promise<{ tokenId: string; tokenURI?: string }[]> {
-  const prismaAny: any = prisma as any;
-  if (!prismaAny.nftToken) return [];
-  const items = await prismaAny.nftToken.findMany({ where: { ownerAddress: owner.toLowerCase() }, orderBy: { tokenId: 'asc' } });
+  await connectMongo();
+  const items = await NftTokenModel.find({ ownerAddress: owner.toLowerCase() }).sort({ tokenId: 1 }).lean();
   return items.map((i: any) => ({ tokenId: i.tokenId.toString(), tokenURI: i.tokenURI || undefined }));
   }
 
