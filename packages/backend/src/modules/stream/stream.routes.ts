@@ -1,9 +1,11 @@
 import { Router } from 'express';
-import { getIngest, getStreamStatus, getHls } from './stream.controller';
+import { getIngest, getStreamStatus, getHls, startStream, stopStream } from './stream.controller';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { requireStreamer } from '../../middlewares/rbac.middleware';
 const router = Router();
 router.post('/ingest', authMiddleware, requireStreamer, getIngest);
+router.post('/:id/start', authMiddleware, requireStreamer, startStream);
+router.post('/:id/stop', authMiddleware, requireStreamer, stopStream);
 router.get('/:id/status', getStreamStatus);
 router.get('/:id/hls', getHls);
 export default router;

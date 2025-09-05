@@ -3,6 +3,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import Hls from "hls.js";
 import { hlsUrlFor } from "../../../lib/config";
+import { API_BASE } from "../../../lib/api";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Separator } from "../../../components/ui/separator";
@@ -103,13 +104,13 @@ export default function StreamDetailPage() {
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_BASE || '';
-    const wsUrl = base.replace(/^http/, 'ws');
+    // Always connect via frontend origin; Next rewrites proxy to backend
+    const wsUrl = window.location.origin.replace(/^http/, 'ws');
   const token = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('streamfi-auth') || '{}')?.state?.session?.token : undefined;
   const socket = io(wsUrl, { transports: ['websocket'], query: { streamId: String(id) }, auth: { token } });
     wsRef.current = socket;
     // Load persisted chat
-    fetch(`${base}/chat/${id}/messages`).then(r=>r.json()).then((data)=>{
+    fetch(`${API_BASE}/chat/${id}/messages`).then(r=>r.json()).then((data)=>{
       if (messagesRef.current && Array.isArray(data?.items)) {
         for (const m of data.items) {
           const el = document.createElement('div');
