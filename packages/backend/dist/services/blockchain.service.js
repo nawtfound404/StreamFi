@@ -6,18 +6,36 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.blockchainService = void 0;
 const ethers_1 = require("ethers");
 const environment_1 = require("../config/environment");
-const prisma_1 = require("../lib/prisma");
+const mongo_1 = require("../lib/mongo");
 const logger_1 = require("../utils/logger");
-const Nitrolite_json_1 = __importDefault(require("./abi/Nitrolite.json"));
+const Nitrolite_1 = __importDefault(require("./abi/Nitrolite"));
 class BlockchainService {
     provider;
     registryContract;
-    adminWallet;
+    adminWallet = null;
     hasDirectMint = false;
     constructor() {
         this.provider = new ethers_1.ethers.JsonRpcProvider(environment_1.env.blockchain.rpcProvider);
-        this.adminWallet = new ethers_1.ethers.Wallet(environment_1.env.blockchain.adminPrivateKey, this.provider);
-        this.registryContract = new ethers_1.ethers.Contract(environment_1.env.blockchain.creatorVaultAddress, Nitrolite_json_1.default.abi, this.adminWallet);
+        // Try to create admin wallet if the key looks valid (not all zeros and proper length)
+        const key = environment_1.env.blockchain.adminPrivateKey?.toLowerCase?.() || '';
+        const isAllZeros = /^0x0+$/.test(key);
+        const looksHex66 = /^0x[0-9a-f]{64}$/.test(key);
+        try {
+            if (looksHex66 && !isAllZeros) {
+                this.adminWallet = new ethers_1.ethers.Wallet(environment_1.env.blockchain.adminPrivateKey, this.provider);
+            }
+            else {
+                this.adminWallet = null;
+                logger_1.logger.warn('ADMIN_PRIVATE_KEY not configured or invalid. Running in read-only mode.');
+            }
+        }
+        catch (e) {
+            this.adminWallet = null;
+            logger_1.logger.warn({ err: e }, 'Failed to initialize admin wallet. Running in read-only mode.');
+        }
+        // Use signer if available; otherwise provider for read-only access and event subscriptions
+        const signerOrProvider = this.adminWallet ?? this.provider;
+        this.registryContract = new ethers_1.ethers.Contract(environment_1.env.blockchain.creatorVaultAddress, Nitrolite_1.default.abi, signerOrProvider);
         // Detect if contract exposes direct mint(address)
         this.hasDirectMint = typeof this.registryContract.mint === 'function';
         logger_1.logger.info('Blockchain service initialized.');
@@ -26,6 +44,9 @@ class BlockchainService {
      * Creates a vault for a user on-chain.
      */
     async createVaultForUser(userWalletAddress) {
+        if (!this.adminWallet) {
+            throw new Error('Admin wallet is not configured. Set ADMIN_PRIVATE_KEY to enable on-chain writes.');
+        }
         try {
             logger_1.logger.info(`Sending transaction to create vault for owner: ${userWalletAddress}`);
             const tx = await this.registryContract.createVault(userWalletAddress);
@@ -71,6 +92,9 @@ class BlockchainService {
      * to creating a new vault which also mints an ERC-721 to the owner.
      */
     async mintNft(toWallet) {
+        if (!this.adminWallet) {
+            throw new Error('Admin wallet is not configured. Set ADMIN_PRIVATE_KEY to enable on-chain writes.');
+        }
         if (this.hasDirectMint) {
             try {
                 const tx = await this.registryContract.mint(toWallet);
@@ -134,10 +158,8 @@ class BlockchainService {
     }
     /** Faster owner lookup via DB index if available. */
     async getTokensByOwnerIndexed(owner) {
-        const prismaAny = prisma_1.prisma;
-        if (!prismaAny.nftToken)
-            return [];
-        const items = await prismaAny.nftToken.findMany({ where: { ownerAddress: owner.toLowerCase() }, orderBy: { tokenId: 'asc' } });
+        await (0, mongo_1.connectMongo)();
+        const items = await mongo_1.NftTokenModel.find({ ownerAddress: owner.toLowerCase() }).sort({ tokenId: 1 }).lean();
         return items.map((i) => ({ tokenId: i.tokenId.toString(), tokenURI: i.tokenURI || undefined }));
     }
     /** Resolve token metadata JSON using IPFS gateway. */

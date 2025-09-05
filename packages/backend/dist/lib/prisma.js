@@ -1,8 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.prisma = void 0;
-const client_1 = require("@prisma/client");
-exports.prisma = global.prisma || new client_1.PrismaClient();
-if (process.env.NODE_ENV !== 'production')
-    global.prisma = exports.prisma;
+// Prisma has been removed. This file remains only to avoid stray imports.
+exports.prisma = {};
 //# sourceMappingURL=prisma.js.map

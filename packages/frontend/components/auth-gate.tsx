@@ -13,17 +13,24 @@ export function AuthGate() {
 
   useEffect(() => {
     if (!pathname) return;
+    // Public pages that should never force-auth redirect
     const isPublic =
       pathname === "/" ||
       pathname.startsWith("/auth") ||
-      pathname.startsWith("/signup")
+      pathname.startsWith("/signup") ||
+      pathname.startsWith("/streams") ||
+      pathname.startsWith("/watch");
+
+    // If unauthenticated and route is protected -> send to /auth
     if (!session && !isPublic) {
-      router.replace("/auth");
+      if (pathname !== "/auth") router.replace("/auth");
       return;
     }
 
+    // If authenticated and on auth-only routes, land on dashboard
     if (session && (pathname.startsWith("/auth") || pathname.startsWith("/signup"))) {
-      router.replace("/dashboard");
+      if (pathname !== "/dashboard") router.replace("/dashboard");
+      return;
     }
   }, [pathname, router, session]);
 

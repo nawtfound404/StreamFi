@@ -3,8 +3,8 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/environment';
 import { logger } from '../utils/logger';
-import { UserRole } from '@prisma/client'; // import the enum/type
-import { prisma } from '../lib/prisma';
+import { UserRole } from '../types/models';
+import { connectMongo, UserModel } from '../lib/mongo';
 
 export interface AuthRequest extends Request {
   user?: { id: string; role: UserRole };
@@ -20,12 +20,13 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
   const token = authHeader.split(' ')[1];
 
   try {
+    await connectMongo();
     const decoded = jwt.verify(token, env.jwt.secret) as { id: string; role: UserRole };
     // Enforce ban: check DB for banned flag
-    const user = await prisma.user.findUnique({ where: { id: decoded.id }, select: { id: true, role: true, banned: true } });
-    if (!user) return res.status(401).json({ message: 'Unauthorized: User not found' });
-    if (user.banned) return res.status(403).json({ message: 'Account banned' });
-    req.user = { id: user.id, role: user.role };
+  const user: any = await UserModel.findById(decoded.id).select('role banned').lean();
+  if (!user) return res.status(401).json({ message: 'Unauthorized: User not found' });
+  if (user.banned) return res.status(403).json({ message: 'Account banned' });
+  req.user = { id: String(user._id), role: user.role as UserRole };
 
     next();
   } catch (error) {

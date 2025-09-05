@@ -8,16 +8,7 @@ export type Donation = {
   time: string // ISO
 }
 
-export type NFTSale = {
-  id: string
-  tokenId: string
-  title: string
-  price: number
-  currency: string
-  buyer: string
-  txHash: string
-  time: string // ISO
-}
+// NFTSale type and flows removed
 
 export type Payout = {
   id: string
@@ -38,10 +29,7 @@ const demoDonations: Donation[] = [
   { id: "d4", from: "diana", amount: 2, currency: "USD", time: iso(1440) },
 ]
 
-const demoNFTs: NFTSale[] = [
-  { id: "n1", tokenId: "#1024", title: "Stream Moment 1", price: 0.02, currency: "ETH", buyer: "0xAbc…123", txHash: "0xdeadbeef", time: iso(60) },
-  { id: "n2", tokenId: "#1025", title: "Stream Moment 2", price: 0.05, currency: "ETH", buyer: "0xF00…bAr", txHash: "0xcafebabe", time: iso(2880) },
-]
+// const demoNFTs = [] as const;
 
 const demoPayouts: Payout[] = [
   { id: "p1", amount: 42, currency: "USD", status: "pending", time: iso(120) },
@@ -97,25 +85,22 @@ export const monetization = {
     const api = await fetchFromApi<Donation[]>(`/monetization/donations`)
     return api ?? demoDonations
   },
-  async getNFTSales() {
-    const api = await fetchFromApi<NFTSale[]>(`/monetization/nfts`)
-    return api ?? demoNFTs
-  },
+  // getNFTSales removed
   async getPayouts() {
     const api = await fetchFromApi<Payout[]>(`/monetization/payouts`)
     return api ?? demoPayouts
   },
   async getSummary() {
     // Try API first
-    const api = await fetchFromApi<{ totalDonationsUSD: number; totalNftSales: number; payoutsPendingUSD: number; sparkline: number[] }>(`/monetization/summary`)
+  const api = await fetchFromApi<{ totalDonationsUSD: number; totalNftSales?: number; payoutsPendingUSD: number; sparkline: number[] }>(`/monetization/summary`)
     if (api) return api
     // Fallback to demo aggregates
     const totalDonations = demoDonations.reduce((s, d) => s + d.amount, 0)
-    const totalNftUsdEstimate = demoNFTs.reduce((s, n) => s + n.price, 0) // treat as nominal units
+  const totalNftUsdEstimate = 0
     const payoutsPending = demoPayouts.filter((p) => p.status === "pending").reduce((s, p) => s + p.amount, 0)
     return {
       totalDonationsUSD: totalDonations,
-      totalNftSales: totalNftUsdEstimate,
+  totalNftSales: totalNftUsdEstimate,
       payoutsPendingUSD: payoutsPending,
       sparkline: [10, 12, 8, 14, 18, 16, 20],
     }

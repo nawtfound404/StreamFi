@@ -1,15 +1,15 @@
 // packages/backend/src/modules/auth/auth.service.ts
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
-import { prisma } from '../../lib/prisma';
+import { connectMongo, UserModel } from '../../lib/mongo';
 import { env } from '../../config/environment';
-import { User } from '@prisma/client';
+import { UserRole } from '../../types/models';
 import { CreateUserDto } from './auth.dto';
 
 /**
  * Generates JWT for a user
  */
-export const generateToken = (user: { id: string; role: User['role'] }) => {
+export const generateToken = (user: { id: string; role: UserRole }) => {
   const payload = {
     id: user.id,
     role: user.role,
@@ -35,13 +35,9 @@ export const createUser = async (userData: CreateUserDto) => {
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  const user = await prisma.user.create({
-    data: {
-      email,
-      password: hashedPassword,
-      name,
-    },
-  });
+  await connectMongo();
+  const doc = await UserModel.create({ email, password: hashedPassword, name, role: UserRole.AUDIENCE });
+  const user = { id: doc._id.toString(), email: doc.email, name: doc.name, displayName: doc.displayName, role: doc.role as UserRole };
 
   return user;
 };
@@ -50,7 +46,8 @@ export const createUser = async (userData: CreateUserDto) => {
  * Helper: find user by email
  */
 export const findUserByEmail = async (email: string) => {
-  return prisma.user.findUnique({ where: { email } });
+  await connectMongo();
+  return UserModel.findOne({ email }).lean<any>();
 };
 
 /**
@@ -68,15 +65,15 @@ const existing = await findUserByEmail(payload.email);
   }
 
   const user = await createUser(payload);
-  const token = generateToken({ id: user.id, role: user.role });
+  const token = generateToken({ id: (user as any)._id?.toString?.() || (user as any).id, role: user.role as UserRole });
 
   // remove sensitive fields before returning
   const safeUser = {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    displayName: user.displayName,
-    role: user.role,
+    id: (user as any)._id?.toString?.() || (user as any).id,
+    email: (user as any).email,
+    name: (user as any).name,
+    displayName: (user as any).displayName,
+    role: user.role as UserRole,
   };
 
   return { user: safeUser, token };
@@ -90,7 +87,7 @@ export const loginUser = async (email: string, password: string) => {
     throw new Error('Email and password required.');
   }
 
-  const user = await findUserByEmail(email);
+  const user: any = await findUserByEmail(email);
   if (!user || !user.password) {
     throw new Error('Invalid credentials.');
   }
@@ -100,14 +97,14 @@ export const loginUser = async (email: string, password: string) => {
     throw new Error('Invalid credentials.');
   }
 
-  const token = generateToken({ id: user.id, role: user.role });
+  const token = generateToken({ id: (user as any)._id.toString(), role: user.role as UserRole });
 
   const safeUser = {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    displayName: user.displayName,
-    role: user.role,
+    id: (user as any)._id.toString(),
+    email: (user as any).email,
+    name: (user as any).name,
+    displayName: (user as any).displayName,
+    role: (user as any).role,
   };
 
   return { user: safeUser, token };
@@ -117,14 +114,12 @@ export const loginUser = async (email: string, password: string) => {
  * Controller-facing: fetch user by id (safe shape)
  */
 export const getUserById = async (id: string) => {
-  const user = await prisma.user.findUnique({
-    where: { id },
-    select: { id: true, email: true, name: true, displayName: true, role: true },
-  });
+  await connectMongo();
+  const user = await UserModel.findById(id).select('email name displayName role').lean();
 
   if (!user) {
     throw new Error('User not found');
   }
 
-  return user;
+  return { id, email: (user as any).email, name: (user as any).name, displayName: (user as any).displayName, role: (user as any).role as UserRole };
 };

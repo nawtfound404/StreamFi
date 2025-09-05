@@ -11,7 +11,6 @@ const overlay_service_1 = require("./services/overlay.service");
 const socket_1 = require("./lib/socket");
 const environment_1 = require("./config/environment");
 const blockchain_service_1 = require("./services/blockchain.service");
-const nft_indexer_service_1 = require("./services/nft-indexer.service");
 const PORT = environment_1.env.port || 8000;
 const httpServer = http_1.default.createServer(app_1.default);
 /**
@@ -32,7 +31,7 @@ httpServer.listen(PORT, () => {
     logger_1.logger.info(`🚀 Server is running on port ${PORT}`);
     blockchain_service_1.blockchainService.listenForDonations();
     // Kick off NFT indexer (non-blocking)
-    nft_indexer_service_1.nftIndexer.backfill().then(() => logger_1.logger.info('✅ NFT backfill complete')).catch((e) => logger_1.logger.error({ err: e }, 'NFT backfill failed'));
-    nft_indexer_service_1.nftIndexer.subscribe();
+    //nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
+    //nftIndexer.subscribe();
 });
 //# sourceMappingURL=server.js.map

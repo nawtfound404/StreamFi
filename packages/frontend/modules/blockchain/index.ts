@@ -1,5 +1,5 @@
-// Blockchain & NFT (stubs)
-export type MintRequest = { to: string; type: "badge" | "collectible"; metadata: Record<string, unknown> };
+// Blockchain helpers for wallet deposit/spend/settle
+export type MintRequest = never;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 
@@ -31,39 +31,15 @@ async function fetchFromApi<T>(path: string): Promise<T> {
 }
 
 export const blockchain = {
-  async mintNFT(req: MintRequest) {
-    const to = req.to;
-    const res = await postToApi<{ ok: boolean; tokenId: string }>("/monetization/nft/mint", {
-      toWallet: to,
-    });
-    return res;
-  },
-  async getToken(tokenId: string | number) {
-    const data = await fetchFromApi<{ tokenId: string; owner: string; tokenURI: string }>(
-      `/monetization/nft/${tokenId}`
+  // Deposit off-chain balance for a stream
+  async deposit(streamId: string, amount: number, token?: string) {
+    return postToApi<{ _id?: string; userId: string; streamId: string; deposited: number; spent: number; token: string }>(
+      `/monetization/deposit`,
+      { streamId, amount, token }
     );
-    return data;
   },
-  async getTokenMetadata(tokenId: string | number) {
-    const data = await fetchFromApi<{ tokenId: string; tokenURI: string; metadata: any }>(
-      `/monetization/nft/${tokenId}/metadata`
-    );
-    return data;
-  },
-  async listOwnedPage(address: string, opts?: { cursor?: string | null; limit?: number }) {
-    const q: string[] = [];
-    if (opts?.limit) q.push(`limit=${encodeURIComponent(String(opts.limit))}`);
-    if (opts?.cursor) q.push(`cursor=${encodeURIComponent(String(opts.cursor))}`);
-    const qs = q.length ? `?${q.join('&')}` : '';
-    const data = await fetchFromApi<{ items: { tokenId: string; tokenURI: string }[]; nextCursor: string | null }>(
-      `/monetization/nft/owner/${address}${qs}`
-    );
-    return data;
-  },
-  async listOwned(address: string) {
-    const data = await fetchFromApi<{ items: { tokenId: string; tokenURI: string }[]; nextCursor?: string | null }>(
-      `/monetization/nft/owner/${address}`
-    );
-    return data?.items ?? [];
+  // Settle at end of stream to get remaining for refund
+  async settle(streamId: string) {
+    return postToApi<{ remaining: number; token: string }>(`/monetization/settle`, { streamId });
   },
 };

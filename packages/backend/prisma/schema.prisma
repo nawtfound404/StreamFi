@@ -1,5 +1,5 @@
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -8,7 +8,7 @@ generator client {
 }
 
 model User {
-  id              String         @id @default(uuid())
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
   email           String?        @unique
   password        String?
   name            String?
@@ -34,13 +34,13 @@ model User {
 }
 
 model Stream {
-  id                String       @id @default(uuid())
+  id                String       @id @default(auto()) @map("_id") @db.ObjectId
   title             String
   ingestUrl         String?
   streamKey         String?      @unique
   status            StreamStatus @default(IDLE)
   streamer          User         @relation(fields: [streamerId], references: [id])
-  streamerId        String
+  streamerId        String       @db.ObjectId
   monetizationRules Json?
   createdAt         DateTime     @default(now())
   startedAt         DateTime?
@@ -50,24 +50,24 @@ model Stream {
 }
 
 model Transaction {
-  id        String            @id @default(uuid())
+  id        String            @id @default(auto()) @map("_id") @db.ObjectId
   amount    Float
   currency  String            @default("USD")
   type      TransactionType
   status    TransactionStatus
   provider  String?
   user      User              @relation(fields: [userId], references: [id])
-  userId    String
+  userId    String            @db.ObjectId
   stream    Stream?           @relation(fields: [streamId], references: [id])
-  streamId  String?
+  streamId  String?           @db.ObjectId
   metadata  Json?
   createdAt DateTime          @default(now())
 }
 
 model PayoutRequest {
-  id         String   @id @default(uuid())
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
   streamer   User     @relation(fields: [streamerId], references: [id])
-  streamerId String
+  streamerId String   @db.ObjectId
   amount     Float
   currency   String   @default("USD")
   status     PayoutStatus @default(PENDING)
@@ -77,45 +77,46 @@ model PayoutRequest {
 }
 
 model Notification {
-  id        String   @id @default(uuid())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
   type      String
   title     String
   body      String
   read      Boolean  @default(false)
   user      User     @relation(fields: [userId], references: [id])
-  userId    String
+  userId    String   @db.ObjectId
   createdAt DateTime @default(now())
 }
 
 model ChatMessage {
-  id        String   @id @default(uuid())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
   stream    Stream   @relation(fields: [streamId], references: [id])
-  streamId  String
+  streamId  String   @db.ObjectId
   user      User?    @relation(fields: [userId], references: [id])
-  userId    String?
+  userId    String?  @db.ObjectId
   text      String
   createdAt DateTime @default(now())
 }
 
 model Mute {
-  id        String   @id @default(uuid())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
   user      User     @relation(fields: [userId], references: [id])
-  userId    String   @unique
+  userId    String   @unique @db.ObjectId
   reason    String?
   createdAt DateTime @default(now())
 }
 
 // Indexed on-chain NFTs for faster ownership queries
 model NftToken {
-  tokenId      BigInt   @id
-  ownerAddress String   @db.VarChar(66)
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  tokenId      BigInt   @unique
+  ownerAddress String
   tokenURI     String?
   updatedAt    DateTime @updatedAt
 }
 
 // Track last processed block for the NFT indexer
 model NftSyncState {
-  id        String  @id @default("nitrolite")
+  id        String  @id @map("_id")
   lastBlock BigInt  @default(0)
   updatedAt DateTime @updatedAt
 }

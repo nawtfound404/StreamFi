@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { prisma } from '../lib/prisma';
+import { NftSyncStateModel, NftTokenModel, connectMongo } from '../lib/mongo';
 import { env } from '../config/environment';
 import { logger } from '../utils/logger';
 import NitroliteABI from './abi/Nitrolite';
@@ -18,16 +18,14 @@ export class NftIndexerService {
   }
 
   private async getLastProcessedBlock(): Promise<bigint> {
-    const state = await prisma.nftSyncState.findUnique({ where: { id: 'nitrolite' } });
-    return state?.lastBlock ?? BigInt(env.blockchain.deployFromBlock ?? 0);
+  await connectMongo();
+  const state: any = await NftSyncStateModel.findById('nitrolite').lean();
+  return (state?.lastBlock as any as bigint) ?? BigInt(env.blockchain.deployFromBlock ?? 0);
   }
 
   private async setLastProcessedBlock(block: bigint) {
-    await prisma.nftSyncState.upsert({
-      where: { id: 'nitrolite' },
-      update: { lastBlock: block },
-      create: { id: 'nitrolite', lastBlock: block },
-    });
+  await connectMongo();
+  await NftSyncStateModel.updateOne({ _id: 'nitrolite' }, { $set: { lastBlock: block } }, { upsert: true });
   }
 
   public ipfsToHttp(uri: string | null | undefined): string | undefined {
@@ -70,11 +68,12 @@ export class NftIndexerService {
           // Fetch tokenURI best-effort
           let tokenURI: string | undefined;
           try { tokenURI = await this.contract.tokenURI(tokenId); } catch {}
-          await prisma.nftToken.upsert({
-            where: { tokenId },
-            update: { ownerAddress: to, tokenURI },
-            create: { tokenId, ownerAddress: to, tokenURI },
-          });
+          await connectMongo();
+          await NftTokenModel.updateOne(
+            { tokenId },
+            { $set: { ownerAddress: to, tokenURI } },
+            { upsert: true }
+          );
         } catch (e) {
           logger.warn({ err: e }, 'Failed to parse/process Transfer log');
         }
@@ -94,11 +93,12 @@ export class NftIndexerService {
         const addr = to.toLowerCase();
         let tokenURI: string | undefined;
         try { tokenURI = await this.contract.tokenURI(tokenId); } catch {}
-        await prisma.nftToken.upsert({
-          where: { tokenId },
-          update: { ownerAddress: addr, tokenURI },
-          create: { tokenId, ownerAddress: addr, tokenURI },
-        });
+        await connectMongo();
+        await NftTokenModel.updateOne(
+          { tokenId },
+          { $set: { ownerAddress: addr, tokenURI } },
+          { upsert: true }
+        );
         logger.info(`NFT Indexer live update token ${tokenId.toString()} -> ${addr}`);
       } catch (e) {
         logger.warn({ err: e }, 'Failed live Transfer processing');

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { api } from '@/lib/api';
 import { connectWallet, getAccounts } from '@/lib/wallet';
+import { blockchain } from '@/modules/blockchain';
+import { io, Socket } from 'socket.io-client';
 
 type Session = { id: string; streamUrl: string; pricing?: Record<string, number> };
 
@@ -30,28 +31,36 @@ export default function WatchPage() {
   const [buyAmt, setBuyAmt] = useState<number>(1000); // default ₹10.00
   const [log, setLog] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     getAccounts().then(a => setAddress(a[0] ?? null)).catch(() => {});
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    async function load() {
-      try {
-        const data = await api<Session>(`/stream/sessions/${encodeURIComponent(sessionId)}`);
-        if (mounted) setSession(data);
-      } catch {
-        // Fallback demo session
-        if (mounted) setSession({
-          id: sessionId,
-          streamUrl: 'https://www.youtube.com/watch?v=ysz5S6PUM-U',
-          pricing: { like: 100, haha: 200, wow: 500 }
-        });
-      }
-    }
-    load();
-    return () => { mounted = false; };
+    // No dedicated session API yet: use a demo fallback and let HLS page handle actual playback
+    setSession({
+      id: sessionId,
+      streamUrl: 'https://www.youtube.com/watch?v=ysz5S6PUM-U',
+      pricing: { like: 100, haha: 200, wow: 500 },
+    });
+    // Wire Socket.IO for reactions and chat overlay scoped to this stream
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE || '';
+      const wsUrl = base.replace(/^http/, 'ws');
+      const token = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('streamfi-auth') || '{}')?.state?.session?.token : undefined;
+      const socket = io(wsUrl, { transports: ['websocket'], query: { streamId: String(sessionId) }, auth: { token } });
+      socketRef.current = socket;
+      socket.on('connect', () => setLog(l => [`[ws] connected`, ...l]));
+      socket.on('disconnect', () => setLog(l => [`[ws] disconnected`, ...l]));
+      socket.on('new_reaction', (evt: { type: string; by: string }) => {
+        setLog(l => [`Reaction: ${evt.type} by ${evt.by.slice(0,6)}`, ...l]);
+      });
+      socket.on('reaction_denied', () => {
+        setLog(l => [`Reaction denied (insufficient balance)`, ...l]);
+      });
+    } catch { /* noop */ }
+    return () => { socketRef.current?.disconnect(); };
   }, [sessionId]);
 
   const embedUrl = useMemo(() => toEmbedUrl(session?.streamUrl || ''), [session?.streamUrl]);
@@ -65,16 +74,14 @@ export default function WatchPage() {
     if (!address) return;
     setLoading(true);
     try {
-      await api(`/vaults/credits/purchase`, {
-        method: 'POST',
-        body: JSON.stringify({ amountPaise: buyAmt, sessionId, wallet: address })
-      });
+      // Off-chain deposit tracked per stream
+      await blockchain.deposit(String(sessionId), buyAmt, 'INR');
       setCredits(c => c + buyAmt);
-      setLog(l => [`Bought ₹${(buyAmt/100).toFixed(2)}`, ...l]);
+      setLog(l => [`Deposited ₹${(buyAmt/100).toFixed(2)}`, ...l]);
     } catch {
       // Fallback: simulate purchase for demo
       setCredits(c => c + buyAmt);
-      setLog(l => [`[SIM] Bought ₹${(buyAmt/100).toFixed(2)}`, ...l]);
+      setLog(l => [`[SIM] Deposited ₹${(buyAmt/100).toFixed(2)}`, ...l]);
     } finally {
       setLoading(false);
     }
@@ -85,10 +92,9 @@ export default function WatchPage() {
     if (credits < price) { setLog(l => [`Insufficient credits`, ...l]); return; }
     setLoading(true);
     try {
-      await api(`/monetization/reactions`, {
-        method: 'POST',
-        body: JSON.stringify({ sessionId, kind, wallet: address })
-      });
+      // Emit reaction via socket; backend will validate and broadcast
+      socketRef.current?.emit('reaction', { streamId: String(sessionId), type: kind });
+      // Optimistic debit; if denied event arrives, user will see the log
       setCredits(c => c - price);
       setLog(l => [`Reacted: ${kind} (-₹${(price/100).toFixed(2)})`, ...l]);
     } catch {
@@ -101,13 +107,13 @@ export default function WatchPage() {
   }
 
   return (
-    <main>
-      <h1>Stream Overlay</h1>
-      <div className="row">
-        <strong>Session:</strong> <code style={{ marginLeft: 8 }}>{sessionId}</code>
-        <span style={{ marginLeft: 'auto' }}>
-          <strong>Wallet:</strong> <code style={{ marginLeft: 8 }}>{address ?? 'Not connected'}</code>
-          <button style={{ marginLeft: 8 }} onClick={onConnect}>{address ? 'Reconnect' : 'Connect Wallet'}</button>
+    <main className="p-4 space-y-4">
+      <h1 className="text-xl font-semibold">Stream Overlay</h1>
+      <div className="row flex items-center gap-2">
+        <strong>Session:</strong> <code className="ml-2">{sessionId}</code>
+        <span className="ml-auto flex items-center">
+          <strong>Wallet:</strong> <code className="ml-2">{address ?? 'Not connected'}</code>
+          <button className="ml-2 px-3 py-1 rounded border" onClick={onConnect}>{address ? 'Reconnect' : 'Connect Wallet'}</button>
         </span>
       </div>
 
@@ -115,7 +121,8 @@ export default function WatchPage() {
         {embedUrl ? (
           <iframe
             src={embedUrl}
-            style={{ width: '100%', aspectRatio: '16 / 9', border: 0, borderRadius: 12 }}
+            title="Embedded Stream"
+            className="w-full aspect-[16/9] rounded-xl border-0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
           />
@@ -124,37 +131,40 @@ export default function WatchPage() {
         )}
       </section>
 
-      <section className="grid">
-        <div className="card">
-          <h2>Credits</h2>
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="card p-3">
+          <h2 className="font-medium mb-1">Credits</h2>
           <p>Balance: ₹{(credits / 100).toFixed(2)}</p>
-          <div className="row">
+          <div className="row flex items-center gap-2 mt-2">
             <input
               type="number"
               min={100}
               step={100}
               value={buyAmt}
+              aria-label="Top-up amount in paise"
+              placeholder="Amount in paise"
               onChange={(e) => setBuyAmt(Number(e.target.value))}
+              className="px-2 py-1 rounded border w-40"
             />
-            <button onClick={buyCredits} disabled={loading || !address}>Buy Credits</button>
+            <button onClick={buyCredits} disabled={loading || !address} className="px-3 py-1 rounded border">Buy Credits</button>
           </div>
-          <p style={{ fontSize: 12, color: '#666' }}>Amounts in paise (₹100 = ₹1.00)</p>
+          <p className="text-xs text-muted-foreground mt-1">Amounts in paise (₹100 = ₹1.00)</p>
         </div>
 
-        <div className="card">
-          <h2>Reactions</h2>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
+        <div className="card p-3">
+          <h2 className="font-medium mb-1">Reactions</h2>
+          <div className="row flex flex-wrap gap-2">
             {Object.entries(session?.pricing ?? { like: 100, haha: 200, wow: 500 }).map(([k, v]) => (
-              <button key={k} onClick={() => reactOnce(k, v)} disabled={loading || !address} style={{ marginRight: 8 }}>
+              <button key={k} onClick={() => reactOnce(k, v)} disabled={loading || !address} className="px-3 py-1 rounded border mr-2">
                 {k} (₹{(v/100).toFixed(2)})
               </button>
             ))}
           </div>
         </div>
 
-        <div className="card">
-          <h2>Activity</h2>
-          <pre style={{ maxHeight: 200 }}>{log.join('\n')}</pre>
+        <div className="card p-3">
+          <h2 className="font-medium mb-1">Activity</h2>
+          <pre className="max-h-52 overflow-auto whitespace-pre-wrap">{log.join('\n')}</pre>
         </div>
       </section>
     </main>

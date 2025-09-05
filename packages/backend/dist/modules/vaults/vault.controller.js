@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createVault = void 0;
-const prisma_1 = require("../../lib/prisma");
+const mongo_1 = require("../../lib/mongo");
 const blockchain_service_1 = require("../../services/blockchain.service");
 const logger_1 = require("../../utils/logger");
 const createVault = async (req, res) => {
@@ -14,20 +14,15 @@ const createVault = async (req, res) => {
         return res.status(400).json({ message: 'Valid walletAddress is required' });
     }
     try {
-        const user = await prisma_1.prisma.user.findUnique({ where: { id: userId } });
+        await (0, mongo_1.connectMongo)();
+        const user = await mongo_1.UserModel.findById(userId).lean();
         // ⚠️ Only works if you added `vaultId` to your Prisma schema.
         if (user?.vaultId) {
             return res.status(409).json({ message: 'User already has a vault' });
         }
         const newVaultId = await blockchain_service_1.blockchainService.createVaultForUser(walletAddress);
-        const updatedUser = await prisma_1.prisma.user.update({
-            where: { id: userId },
-            data: {
-                walletAddress,
-                // Cast to `any` until Prisma schema includes vaultId
-                ...(newVaultId && { vaultId: newVaultId }),
-            },
-        });
+        await mongo_1.UserModel.updateOne({ _id: userId }, { $set: { walletAddress, ...(newVaultId ? { vaultId: newVaultId } : {}) } });
+        const updatedUser = await mongo_1.UserModel.findById(userId).lean();
         res.status(201).json({
             message: 'Vault created successfully',
             vaultId: newVaultId?.toString(),
