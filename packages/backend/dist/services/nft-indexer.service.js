@@ -5,32 +5,30 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.nftIndexer = exports.NftIndexerService = void 0;
 const ethers_1 = require("ethers");
-const prisma_1 = require("../lib/prisma");
+const mongo_1 = require("../lib/mongo");
 const environment_1 = require("../config/environment");
 const logger_1 = require("../utils/logger");
-const Nitrolite_json_1 = __importDefault(require("./abi/Nitrolite.json"));
+const Nitrolite_1 = __importDefault(require("./abi/Nitrolite"));
 class NftIndexerService {
     provider;
     contract;
     transferTopic;
     constructor() {
         this.provider = new ethers_1.ethers.JsonRpcProvider(environment_1.env.blockchain.rpcProvider);
-        this.contract = new ethers_1.ethers.Contract(environment_1.env.blockchain.creatorVaultAddress, Nitrolite_json_1.default.abi, this.provider);
+        this.contract = new ethers_1.ethers.Contract(environment_1.env.blockchain.creatorVaultAddress, Nitrolite_1.default.abi, this.provider);
         const evt = this.contract.interface.getEvent('Transfer');
         if (!evt)
             throw new Error('Transfer event not found in ABI');
         this.transferTopic = evt.topicHash;
     }
     async getLastProcessedBlock() {
-        const state = await prisma_1.prisma.nftSyncState.findUnique({ where: { id: 'nitrolite' } });
+        await (0, mongo_1.connectMongo)();
+        const state = await mongo_1.NftSyncStateModel.findById('nitrolite').lean();
         return state?.lastBlock ?? BigInt(environment_1.env.blockchain.deployFromBlock ?? 0);
     }
     async setLastProcessedBlock(block) {
-        await prisma_1.prisma.nftSyncState.upsert({
-            where: { id: 'nitrolite' },
-            update: { lastBlock: block },
-            create: { id: 'nitrolite', lastBlock: block },
-        });
+        await (0, mongo_1.connectMongo)();
+        await mongo_1.NftSyncStateModel.updateOne({ _id: 'nitrolite' }, { $set: { lastBlock: block } }, { upsert: true });
     }
     ipfsToHttp(uri) {
         if (!uri)
@@ -76,11 +74,8 @@ class NftIndexerService {
                         tokenURI = await this.contract.tokenURI(tokenId);
                     }
                     catch { }
-                    await prisma_1.prisma.nftToken.upsert({
-                        where: { tokenId },
-                        update: { ownerAddress: to, tokenURI },
-                        create: { tokenId, ownerAddress: to, tokenURI },
-                    });
+                    await (0, mongo_1.connectMongo)();
+                    await mongo_1.NftTokenModel.updateOne({ tokenId }, { $set: { ownerAddress: to, tokenURI } }, { upsert: true });
                 }
                 catch (e) {
                     logger_1.logger.warn({ err: e }, 'Failed to parse/process Transfer log');
@@ -104,11 +99,8 @@ class NftIndexerService {
                     tokenURI = await this.contract.tokenURI(tokenId);
                 }
                 catch { }
-                await prisma_1.prisma.nftToken.upsert({
-                    where: { tokenId },
-                    update: { ownerAddress: addr, tokenURI },
-                    create: { tokenId, ownerAddress: addr, tokenURI },
-                });
+                await (0, mongo_1.connectMongo)();
+                await mongo_1.NftTokenModel.updateOne({ tokenId }, { $set: { ownerAddress: addr, tokenURI } }, { upsert: true });
                 logger_1.logger.info(`NFT Indexer live update token ${tokenId.toString()} -> ${addr}`);
             }
             catch (e) {

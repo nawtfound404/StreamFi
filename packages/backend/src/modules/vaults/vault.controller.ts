@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middlewares/auth.middleware';
-import { prisma } from '../../lib/prisma';
+import { UserModel, connectMongo } from '../../lib/mongo';
 import { blockchainService } from '../../services/blockchain.service';
 import { logger } from '../../utils/logger';
 
@@ -16,7 +16,8 @@ export const createVault = async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+  await connectMongo();
+  const user = await UserModel.findById(userId).lean();
 
     // ⚠️ Only works if you added `vaultId` to your Prisma schema.
     if ((user as any)?.vaultId) {
@@ -25,14 +26,8 @@ export const createVault = async (req: AuthRequest, res: Response) => {
 
     const newVaultId = await blockchainService.createVaultForUser(walletAddress);
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        walletAddress,
-        // Cast to `any` until Prisma schema includes vaultId
-        ...(newVaultId && { vaultId: newVaultId as any }),
-      },
-    });
+  await UserModel.updateOne({ _id: userId }, { $set: { walletAddress, ...(newVaultId ? { vaultId: newVaultId as any } : {}) } });
+  const updatedUser = await UserModel.findById(userId).lean();
 
     res.status(201).json({
       message: 'Vault created successfully',

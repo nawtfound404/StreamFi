@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import crypto from 'crypto';
 import csrf from 'csurf';
+import cookieParser from 'cookie-parser';
 import client from 'prom-client';
 import responseTime from 'response-time';
 import type { Request, Response, NextFunction } from 'express';
@@ -47,6 +48,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+// Needed for csurf with cookie-based secrets
+app.use(cookieParser());
 app.use(rateLimiter);
 
 // Metrics

@@ -1,25 +1,41 @@
 import { ethers } from 'ethers';
 import { env } from '../config/environment';
-import { prisma } from '../lib/prisma';
+import { NftTokenModel, connectMongo } from '../lib/mongo';
 import { logger } from '../utils/logger';
-import NitroliteABI from './abi/Nitrolite.json';
+import NitroliteABI from './abi/Nitrolite';
 
 class BlockchainService {
   private provider: ethers.JsonRpcProvider;
   private registryContract: ethers.Contract;
-  private adminWallet: ethers.Wallet;
+  private adminWallet: ethers.Wallet | null = null;
   private hasDirectMint: boolean = false;
 
   constructor() {
     this.provider = new ethers.JsonRpcProvider(env.blockchain.rpcProvider);
-    this.adminWallet = new ethers.Wallet(env.blockchain.adminPrivateKey, this.provider);
-  this.registryContract = new ethers.Contract(
+    // Try to create admin wallet if the key looks valid (not all zeros and proper length)
+    const key = env.blockchain.adminPrivateKey?.toLowerCase?.() || '';
+    const isAllZeros = /^0x0+$/.test(key);
+    const looksHex66 = /^0x[0-9a-f]{64}$/.test(key);
+    try {
+      if (looksHex66 && !isAllZeros) {
+        this.adminWallet = new ethers.Wallet(env.blockchain.adminPrivateKey, this.provider);
+      } else {
+        this.adminWallet = null;
+        logger.warn('ADMIN_PRIVATE_KEY not configured or invalid. Running in read-only mode.');
+      }
+    } catch (e) {
+      this.adminWallet = null;
+      logger.warn({ err: e }, 'Failed to initialize admin wallet. Running in read-only mode.');
+    }
+    // Use signer if available; otherwise provider for read-only access and event subscriptions
+    const signerOrProvider = this.adminWallet ?? this.provider;
+    this.registryContract = new ethers.Contract(
       env.blockchain.creatorVaultAddress,
       NitroliteABI.abi,
-      this.adminWallet
+      signerOrProvider
     );
-  // Detect if contract exposes direct mint(address)
-  this.hasDirectMint = typeof (this.registryContract as any).mint === 'function';
+    // Detect if contract exposes direct mint(address)
+    this.hasDirectMint = typeof (this.registryContract as any).mint === 'function';
     logger.info('Blockchain service initialized.');
   }
 
@@ -27,6 +43,9 @@ class BlockchainService {
    * Creates a vault for a user on-chain.
    */
   public async createVaultForUser(userWalletAddress: string): Promise<bigint> {
+    if (!this.adminWallet) {
+      throw new Error('Admin wallet is not configured. Set ADMIN_PRIVATE_KEY to enable on-chain writes.');
+    }
     try {
       logger.info(`Sending transaction to create vault for owner: ${userWalletAddress}`);
       const tx = await this.registryContract.createVault(userWalletAddress);
@@ -78,6 +97,9 @@ class BlockchainService {
    * to creating a new vault which also mints an ERC-721 to the owner.
    */
   public async mintNft(toWallet: string): Promise<bigint> {
+    if (!this.adminWallet) {
+      throw new Error('Admin wallet is not configured. Set ADMIN_PRIVATE_KEY to enable on-chain writes.');
+    }
     if (this.hasDirectMint) {
       try {
         const tx = await (this.registryContract as any).mint(toWallet);
@@ -142,9 +164,8 @@ class BlockchainService {
 
   /** Faster owner lookup via DB index if available. */
   public async getTokensByOwnerIndexed(owner: string): Promise<{ tokenId: string; tokenURI?: string }[]> {
-  const prismaAny: any = prisma as any;
-  if (!prismaAny.nftToken) return [];
-  const items = await prismaAny.nftToken.findMany({ where: { ownerAddress: owner.toLowerCase() }, orderBy: { tokenId: 'asc' } });
+  await connectMongo();
+  const items = await NftTokenModel.find({ ownerAddress: owner.toLowerCase() }).sort({ tokenId: 1 }).lean();
   return items.map((i: any) => ({ tokenId: i.tokenId.toString(), tokenURI: i.tokenURI || undefined }));
   }
 

@@ -10,7 +10,8 @@ import 'dotenv/config'; // Ensures .env file is loaded and available to process.
 const envSchema = z.object({
   // --- Core & Database ---
   PORT: z.coerce.number().default(8000),
-  DATABASE_URL: z.string().url('DATABASE_URL must be a valid PostgreSQL connection string.'),
+  // Accept either Postgres or Mongo connection strings; basic presence check
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   
   // --- Authentication ---
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is a required environment variable.'),
@@ -37,7 +38,7 @@ const envSchema = z.object({
 
   // --- Node Media Server (Streaming) ---
   NMS_RTMP_URL: z.string().url().default('rtmp://localhost:1935/live'),
-  NMS_HLS_BASE: z.string().url().default('http://localhost:8001'),
+  NMS_HLS_BASE: z.string().url().default('http://localhost:8081'),
   NMS_HLS_TEMPLATE: z.string().default('/live/{key}/index.m3u8'),
   // --- Indexer & Metadata ---
   IPFS_GATEWAY: z.string().url().optional(),
