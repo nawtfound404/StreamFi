@@ -3,11 +3,10 @@ export type Role = "STREAMER" | "AUDIENCE" | "ADMIN" | "streamer" | "viewer" | "
 
 export type Session = { userId: string; role: Role; token: string } | null;
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api';
 
 async function getCsrfToken(): Promise<string | null> {
   try {
-    if (!API_BASE) return null;
     const res = await fetch(`${API_BASE}/csrf`, { credentials: 'include' });
     if (!res.ok) return null;
     const data = await res.json() as { csrfToken?: string };
@@ -37,17 +36,14 @@ async function getJSON<T>(path: string, token?: string): Promise<T> {
 
 export const auth = {
   async signIn(params: { email: string; password: string }): Promise<Session> {
-    if (!API_BASE) return null; // fallback disabled if no API
     const data = await postJSON<{ token: string; user: { id: string; role: Role } }>("/auth/login", params);
     return { userId: data.user.id, role: data.user.role, token: data.token };
   },
   async signUp(params: { email: string; password: string; name?: string }): Promise<Session> {
-    if (!API_BASE) return null;
     const data = await postJSON<{ token: string; user: { id: string; role: Role } }>("/auth/signup", params);
     return { userId: data.user.id, role: data.user.role, token: data.token };
   },
   async getMe(token: string) {
-    if (!API_BASE) return null;
     return getJSON<{ user: { id: string; role: Role } }>("/auth/me", token);
   },
   async signOut() {

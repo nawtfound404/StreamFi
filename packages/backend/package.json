@@ -8,6 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node -r tsconfig-paths/register dist/server.js",
     "test": "jest",
+    "seed": "ts-node -r tsconfig-paths/register src/scripts/seed.ts",
+    "seed:dist": "node -r tsconfig-paths/register dist/scripts/seed.js",
     "lint": "eslint . --ext .ts",
     "prettier": "prettier --write ."
   },
