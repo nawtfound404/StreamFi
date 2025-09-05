@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/environment';
 import { logger } from '../utils/logger';
-import NitroliteABI from './abi/Nitrolite.json';
+import NitroliteABI from './abi/Nitrolite';
 
 export class NftIndexerService {
   private provider: ethers.JsonRpcProvider;
