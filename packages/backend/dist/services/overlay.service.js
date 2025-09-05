@@ -7,8 +7,8 @@ exports.onSocketConnection = void 0;
 const logger_1 = require("../utils/logger");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const environment_1 = require("../config/environment");
-const prisma_1 = require("../lib/prisma");
 const eventRateLimiter_1 = require("../utils/eventRateLimiter");
+const mongo_1 = require("../lib/mongo");
 // Fix the type issue by using the correct Server type
 const onSocketConnection = (io) => {
     // Use the 'on' method directly on the io instance
@@ -18,10 +18,11 @@ const onSocketConnection = (io) => {
             if (!token)
                 return next(new Error('unauthorized'));
             const decoded = jsonwebtoken_1.default.verify(token, environment_1.env.jwt.secret);
-            const user = await prisma_1.prisma.user.findUnique({ where: { id: decoded.id } });
+            await (0, mongo_1.connectMongo)();
+            const user = await mongo_1.UserModel.findById(decoded.id).lean();
             if (!user || user.banned)
                 return next(new Error('forbidden'));
-            socket.userId = user.id;
+            socket.userId = String(user._id);
             socket.role = user.role;
             return next();
         }
@@ -42,12 +43,34 @@ const onSocketConnection = (io) => {
             socket.join(streamId);
             logger_1.logger.info(`Socket ${socket.id} joined room ${streamId}`);
         }
-        socket.on('reaction', (data) => {
+        socket.on('reaction', async (data) => {
             const ok = (0, eventRateLimiter_1.allowEvent)(socket.userId, 'reaction', { limit: 10, windowMs: 10_000 });
             if (!ok)
                 return;
-            io.to(data.streamId).emit('new_reaction', { type: data.type });
-            logger_1.logger.info(`Reaction received for stream ${data.streamId}`);
+            const uid = socket.userId;
+            try {
+                await (0, mongo_1.connectMongo)();
+                const stream = await mongo_1.StreamModel.findById(data.streamId).lean();
+                if (!stream)
+                    return;
+                const rules = stream.monetizationRules || {};
+                const costs = (rules.reactionCosts || {});
+                const cost = Math.max(0, Number(costs[data.type] ?? 1));
+                if (cost > 0) {
+                    // Atomically increment spent if it doesn't exceed deposited
+                    const result = await mongo_1.BalanceModel.findOneAndUpdate({ userId: uid, streamId: stream._id, $expr: { $lte: [{ $add: ['$spent', cost] }, '$deposited'] } }, { $inc: { spent: cost } }, { new: true }).lean();
+                    if (!result) {
+                        // Insufficient balance
+                        socket.emit('reaction_denied', { reason: 'insufficient_balance' });
+                        return;
+                    }
+                }
+                io.to(data.streamId).emit('new_reaction', { type: data.type, by: uid });
+                logger_1.logger.info(`Reaction received for stream ${data.streamId}`);
+            }
+            catch (e) {
+                logger_1.logger.warn({ err: e }, 'reaction handling failed');
+            }
         });
         // Basic chat relay for MVP
         socket.on('chat_message', (payload) => {
@@ -87,18 +110,19 @@ const onSocketConnection = (io) => {
             const decoded = jsonwebtoken_1.default.verify(token, environment_1.env.jwt.secret);
             const ns = socket.nsp.name; // e.g. /mod/<streamId>
             const streamId = ns.split('/')[2];
-            const user = await prisma_1.prisma.user.findUnique({ where: { id: decoded.id } });
+            await (0, mongo_1.connectMongo)();
+            const user = await mongo_1.UserModel.findById(decoded.id).lean();
             if (!user || user.banned)
                 return next(new Error('forbidden'));
             if (user.role === 'ADMIN') {
-                socket.userId = user.id;
+                socket.userId = String(user._id);
                 return next();
             }
             // check ownership
-            const stream = await prisma_1.prisma.stream.findFirst({ where: { id: streamId, streamerId: user.id }, select: { id: true } });
+            const stream = await mongo_1.StreamModel.findOne({ _id: streamId, streamerId: user._id }).select({ _id: 1 }).lean();
             if (!stream)
                 return next(new Error('forbidden'));
-            socket.userId = user.id;
+            socket.userId = String(user._id);
             return next();
         }
         catch {

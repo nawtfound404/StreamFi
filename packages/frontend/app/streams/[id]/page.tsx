@@ -132,18 +132,6 @@ export default function StreamDetailPage() {
     return () => { socket.disconnect(); };
   }, [id]);
 
-  // Load owned NFTs via backend route
-  useEffect(() => {
-    let stop = false;
-    async function loadOwned() {
-      if (!isConnected || !address) { setOwned([]); return; }
-      const items = await blockchain.listOwned(address);
-      if (stop) return;
-      setOwned(items);
-    }
-    loadOwned();
-    return () => { stop = true; };
-  }, [address, isConnected]);
 
   return (
     <main className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
@@ -224,13 +212,7 @@ export default function StreamDetailPage() {
                   </div>
                 </DialogContent>
               </Dialog>
-              <Button disabled={!isConnected}
-                onClick={async () => {
-                  if (!address) return;
-                  await blockchain.mintNFT({ to: address, type: "badge", metadata: { streamId: id } });
-                }}>
-                {isConnected ? "Mint Fan Badge" : "Connect Wallet to Mint"}
-              </Button>
+              {/* NFT minting disabled */}
             </div>
           </CardContent>
         </Card>
@@ -256,15 +238,7 @@ export default function StreamDetailPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="mb-2 font-medium text-sm">Owned NFTs (first 10)</div>
-            {!isConnected && <div className="text-xs text-muted-foreground">Connect wallet to view owned NFTs.</div>}
-            {isConnected && (
-              <OwnedList items={owned} />
-            )}
-          </CardContent>
-        </Card>
+  {/* Owned NFTs panel removed */}
         <Card className="md:col-span-3">
           <CardContent className="p-4">
             <ViewerStats />
@@ -299,99 +273,4 @@ function ViewerStats() {
   )
 }
 
-type NftAttribute = { trait_type?: string; value?: string | number | boolean };
-type NftMetadata = { name?: string; image?: string; description?: string; attributes?: NftAttribute[] };
-function OwnedList({ items }: { items: { tokenId: string; tokenURI: string }[] }) {
-  const { address } = useAccount();
-  const [list, setList] = useState<{ tokenId: string; tokenURI: string }[]>(items || []);
-  const [meta, setMeta] = useState<Record<string, NftMetadata>>({});
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-
-  // Initial load when wallet or initial items change
-  useEffect(() => {
-    setList(items || []);
-    setCursor(null);
-    setDone(false);
-  }, [items]);
-
-  // Metadata loader for visible items
-  useEffect(() => {
-    let cancel = false;
-    async function loadVisibleMeta() {
-      const result: Record<string, NftMetadata> = { ...meta };
-      for (const it of list) {
-        if (result[it.tokenId]) continue;
-        try {
-          const data = await blockchain.getTokenMetadata(it.tokenId);
-          const j = data?.metadata as NftMetadata;
-          if (j && typeof j === 'object') {
-            result[it.tokenId] = { name: j.name, image: j.image, description: j.description, attributes: Array.isArray(j.attributes) ? j.attributes : undefined };
-          }
-        } catch { /* ignore */ }
-      }
-      if (!cancel) setMeta(result);
-    }
-    if (list.length) loadVisibleMeta();
-    return () => { cancel = true; };
-  }, [list]);
-
-  // IntersectionObserver to trigger pagination
-  useEffect(() => {
-    if (!address) return;
-    const el = sentinelRef.current;
-    if (!el) return;
-    const io = new IntersectionObserver(async (entries) => {
-      const first = entries[0];
-      if (!first?.isIntersecting) return;
-      if (loading || done) return;
-      setLoading(true);
-      try {
-        const page = await blockchain.listOwnedPage(address, { cursor, limit: 20 });
-        setList((prev) => [...prev, ...(page.items || [])]);
-        setCursor(page.nextCursor ?? null);
-        if (!page.nextCursor) setDone(true);
-      } finally {
-        setLoading(false);
-      }
-    }, { threshold: 1.0 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [address, cursor, loading, done]);
-
-  if (!list.length) return <div className="text-xs text-muted-foreground">No NFTs found.</div>;
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {list.map((t) => {
-        const m: NftMetadata = meta[t.tokenId] || {};
-        const img = m.image;
-        return (
-          <div key={t.tokenId} className="rounded-md border p-2 text-xs">
-            <div className="font-medium">Token #{t.tokenId}</div>
-            {img ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={img} alt={m.name || `Token ${t.tokenId}`} className="mt-1 w-full h-24 object-cover rounded" />
-            ) : (
-              <div className="truncate text-muted-foreground">{t.tokenURI}</div>
-            )}
-            {m.name && <div className="mt-1">{m.name}</div>}
-            {m.description && <div className="text-muted-foreground mt-1 line-clamp-2">{m.description}</div>}
-            {Array.isArray(m.attributes) && m.attributes.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1">
-                {m.attributes.slice(0,3).map((a: NftAttribute, idx: number) => (
-                  <span key={idx} className="rounded bg-secondary px-1 py-0.5 text-[10px]">{a?.trait_type ?? 'attr'}: {String(a?.value ?? '')}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-      {/* Sentinel for infinite scroll */}
-      <div ref={sentinelRef} className="col-span-2 flex items-center justify-center py-2">
-        {loading ? <span className="text-xs text-muted-foreground">Loading…</span> : done ? <span className="text-xs text-muted-foreground">End</span> : <span className="text-xs text-muted-foreground">Scroll to load more</span>}
-      </div>
-    </div>
-  );
-}
+// NFTs UI removed

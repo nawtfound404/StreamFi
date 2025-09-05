@@ -61,7 +61,7 @@ docker compose up --build
 Services
 - Backend: http://localhost:8000
 - Frontend: http://localhost:3000
-- Postgres: localhost:5433 (db service is 5432 inside the network)
+- MongoDB: mongodb://user:password@localhost:27017/streamfi?authSource=admin
 
 ## Run (local dev)
 
@@ -112,3 +112,16 @@ stripe listen --forward-to http://localhost:8000/api/payments/stripe/webhook
 ---
 
 MIT © StreamFi contributors
+
+## OBS Quick Start
+
+Configure OBS to stream to the local Node Media Server:
+
+- Service: Custom
+- Server: rtmp://localhost:1935/live
+- Stream Key: use the key from POST /api/stream/ingest (copy `streamKey`)
+
+Steps:
+1. Sign in on the app, then call POST http://localhost:8000/api/stream/ingest with your auth cookie/token to get `{ ingestUrl, streamKey }`.
+2. In OBS, set Server to the `ingestUrl` or rtmp://localhost:1935/live and Stream Key to that `streamKey`.
+3. Start streaming. The HLS URL for players is returned by GET http://localhost:8000/api/stream/{id-or-key}/hls.

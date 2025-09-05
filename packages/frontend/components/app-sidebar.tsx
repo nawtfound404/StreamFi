@@ -32,11 +32,11 @@ const data = {
     },
     {
       title: "Streams",
-      url: "/streams",
+      url: "/streams", // Parent goes to list of live streams
       icon: Tv,
       items: [
         { title: "Live", url: "/streams" },
-        { title: "My Stream", url: "/dashboard" },
+        { title: "My Stream", url: "/streamer" },
       ],
     },
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, items: [] },

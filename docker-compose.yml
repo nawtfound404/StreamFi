@@ -1,26 +1,52 @@
 # StreamFi/docker-compose.yml
 
-version: '3.8'
-
 services:
+  # Database Service (MongoDB)
+  db:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: user
+      MONGO_INITDB_ROOT_PASSWORD: password
+    networks:
+      - streamfi-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Node Media Server
+  nms:
+    build:
+      context: ./packages/media-server
+      dockerfile: Dockerfile
+    ports:
+      - "1935:1935"   # RTMP ingest
+      - "8081:8080"   # HLS HTTP (host:container)
+    env_file:
+      - ./packages/backend/.env
+    networks:
+      - streamfi-net
+
   # Backend Service
   backend:
     build:
-      context: .
-      dockerfile: ./packages/backend/Dockerfile
+      context: ./packages/backend
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
-      - "5555:5555"
     env_file:
       - ./packages/backend/.env
     depends_on:
-      - db
-      - nms
-    environment:
-      DATABASE_URL: "postgresql://user:password@db:5432/streamfi?schema=public"
-      NMS_RTMP_URL: "rtmp://nms:1935/live"
-      NMS_HLS_BASE: "http://nms:8001"
-      NMS_HLS_TEMPLATE: "/live/{key}/index.m3u8"
+      db:
+        condition: service_healthy
+      nms:
+        condition: service_started
+    environment: {}
     networks:
       - streamfi-net
 
@@ -28,39 +54,18 @@ services:
   frontend:
     build:
       context: ./packages/frontend
-      # Pass the build argument to the frontend Dockerfile
+      dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE: http://backend:8000/api
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
+        NEXT_PUBLIC_HLS_BASE: ${NEXT_PUBLIC_HLS_BASE}
+        NEXT_PUBLIC_CHAT_WS_BASE: ${NEXT_PUBLIC_CHAT_WS_BASE}
     ports:
       - "3000:3000"
     depends_on:
-      - backend
-    networks:
-      - streamfi-net
-
-  # Database Service
-  db:
-    image: postgres:14-alpine
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: streamfi
-    networks:
-      - streamfi-net
-
-  # Node Media Server
-  nms:
-    build:
-      context: ./packages/media-server
-    ports:
-      - "1935:1935"   # RTMP ingest
-      - "8001:8001"   # HLS HTTP
-    environment:
-      API_BASE: "http://backend:8000/api"
+      backend:
+        condition: service_started
+    env_file:
+      - ./packages/frontend/.env.local
     networks:
       - streamfi-net
 
@@ -69,4 +74,4 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  mongo_data:
