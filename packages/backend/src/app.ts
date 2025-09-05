@@ -77,6 +77,16 @@ app.use((req, res, next) => {
 });
 
 app.use('/api', apiRoutes);
+// API root info for convenience
+app.get('/api', (_req, res) => {
+	return res.status(200).json({
+		ok: true,
+		name: 'StreamFi API',
+		docs: '/docs',
+		health: '/health',
+		examples: ['/api/auth/login', '/api/csrf'],
+	});
+});
 // CSRF token issuance for browsers: returns a one-time token bound to the secret cookie
 app.get('/api/csrf', csrfProtection, (req: Request, res: Response) => {
 	const token = (req as any).csrfToken?.() as string | undefined;
