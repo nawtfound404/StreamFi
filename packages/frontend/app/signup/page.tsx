@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/button"
 import { Input } from "../../components/ui/input"
 import { Label } from "../../components/ui/label"
 import { auth } from "../../modules/auth"
+import { users } from "../../modules/users"
 import { useAuthStore } from "../../stores/auth-store"
 
 export default function SignupPage() {
@@ -16,9 +17,16 @@ export default function SignupPage() {
     const form = e.currentTarget
     const email = (form.elements.namedItem("email") as HTMLInputElement)?.value || ""
     const password = (form.elements.namedItem("password") as HTMLInputElement)?.value || ""
+    const role = (form.elements.namedItem("role") as HTMLSelectElement)?.value as 'STREAMER' | 'AUDIENCE' | ''
     setLoading(true)
     const session = await auth.signUp({ email, password })
     setSession(session)
+    // Set initial role if chosen
+    try {
+      if (session && (role === 'STREAMER' || role === 'AUDIENCE')) {
+        await users.setRole(role)
+      }
+    } catch { /* ignore */ }
     router.replace("/dashboard")
   }
   return (
@@ -32,6 +40,14 @@ export default function SignupPage() {
           <div>
             <Label htmlFor="password">Password</Label>
             <Input id="password" name="password" type="password" placeholder="••••••••" required />
+          </div>
+          <div>
+            <Label htmlFor="role">Role</Label>
+            <select id="role" name="role" aria-label="Select role" className="mt-1 block w-full rounded-md border bg-background p-2">
+              <option value="">Choose one (optional)</option>
+              <option value="STREAMER">Creator</option>
+              <option value="AUDIENCE">User</option>
+            </select>
           </div>
           <Button type="submit" className="w-full" disabled={loading}>{loading ? "Creating..." : "Create account"}</Button>
           <div className="text-center text-sm text-muted-foreground">

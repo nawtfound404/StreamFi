@@ -1,57 +1,89 @@
-"use client"
-import { useState } from "react"
-import { Card } from "../../../components/ui/card"
-import { Button } from "../../../components/ui/button"
-import { Input } from "../../../components/ui/input"
-import { Label } from "../../../components/ui/label"
-import { streaming } from "../../../modules/streaming"
+"use client";
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { users } from "@/modules/users";
+import { useAuthStore } from "@/stores/auth-store";
+import { connectWallet, getAccounts } from "@/lib/wallet";
 
 export default function SettingsPage() {
-  const [displayName, setDisplayName] = useState("Streamer")
-  const [about, setAbout] = useState("")
-  const [payoutEmail, setPayoutEmail] = useState("")
-  const [ingest, setIngest] = useState<{ key: string; ingestUrl: string } | null>(null)
-  const [revealed, setRevealed] = useState(false)
+  const session = useAuthStore((s) => s.session);
+  const [username, setUsername] = useState("");
+  const [role, setRole] = useState<"STREAMER" | "AUDIENCE">("AUDIENCE");
+  const [status, setStatus] = useState<string>("");
+  const [wallet, setWallet] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAccounts().then((a) => setWallet(a[0] ?? null)).catch(() => {});
+  }, []);
+
+  async function saveUsername() {
+    try {
+      setStatus("Saving username…");
+      await users.setUsername(username.trim());
+      setStatus("Username saved");
+    } catch (e) { setStatus(String(e)); }
+  }
+  async function switchRole() {
+    try {
+      setStatus("Switching role…");
+      await users.setRole(role);
+      setStatus("Role updated");
+    } catch (e) { setStatus(String(e)); }
+  }
+  async function lockWallet() {
+    try {
+      const addr = await connectWallet();
+      if (!addr) { setStatus("Wallet connect failed"); return; }
+      setWallet(addr);
+      // Call vault create to lock wallet to user
+      const csrfRes = await fetch(`/api/csrf`, { credentials: 'include' });
+      const csrfToken = csrfRes.ok ? (await csrfRes.json()).csrfToken as string : undefined;
+      const token = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('streamfi-auth') || '{}')?.state?.session?.token : undefined;
+      const res = await fetch(`/api/vaults`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) }, body: JSON.stringify({ walletAddress: addr }) });
+      if (!res.ok) throw new Error(await res.text());
+      setStatus("Wallet locked to your account");
+    } catch (e) { setStatus(String(e)); }
+  }
+
   return (
-    <main className="mx-auto max-w-4xl px-4 sm:px-6 py-8 space-y-6">
-      <h1 className="text-2xl font-semibold">Settings</h1>
-
-      <Card className="p-4 space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
+    <main className="mx-auto max-w-3xl px-4 sm:px-6 py-8 space-y-4">
+      <h1 className="text-2xl font-semibold mb-2">Settings</h1>
+      {!session && <p className="text-sm text-muted-foreground">Sign in to manage your profile.</p>}
+      <Card>
+        <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
           <div>
-            <Label htmlFor="display">Display name</Label>
-            <Input id="display" value={displayName} onChange={(e)=>setDisplayName(e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="payout">Payout email</Label>
-            <Input id="payout" placeholder="payments@example.com" value={payoutEmail} onChange={(e)=>setPayoutEmail(e.target.value)} />
-          </div>
-        </div>
-        <div>
-          <Label htmlFor="about">About</Label>
-          <textarea id="about" aria-label="About" className="mt-1 w-full rounded-md border bg-background px-3 py-2" rows={4} value={about} onChange={(e)=>setAbout(e.target.value)} />
-        </div>
-        <Button type="button" className="w-fit">Save</Button>
-      </Card>
-
-      <Card className="p-4 space-y-3">
-        <div className="font-medium">Stream Key & Ingest</div>
-        <div className="text-sm text-muted-foreground">Generate a new ingest and reveal your stream key.</div>
-        <div className="flex items-center gap-2">
-          <Button type="button" onClick={async ()=>{ const s = await streaming.createIngest(); setIngest({ key: s.key, ingestUrl: s.ingestUrl }) }}>Generate</Button>
-          {ingest && (
-            <div className="text-sm">
-              <div>Ingest: <span className="font-mono">{ingest.ingestUrl}</span></div>
-              <div>Key: <span className="font-mono">{revealed ? ingest.key : "••••••••"}</span> <Button variant="outline" size="sm" onClick={()=>setRevealed(r=>!r)}>{revealed?"Hide":"Reveal"}</Button></div>
+            <div className="text-sm text-muted-foreground mb-1">Username</div>
+            <div className="flex gap-2">
+              <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="yourname" />
+              <Button onClick={saveUsername} disabled={!session}>Save</Button>
             </div>
-          )}
-        </div>
+          </div>
+          <div>
+            <div className="text-sm text-muted-foreground mb-1">Role</div>
+            <div className="flex gap-2">
+              <select aria-label="Role" className="border rounded-md px-2 py-1" value={role} onChange={(e) => setRole(e.target.value as "STREAMER" | "AUDIENCE")}>
+                <option value="AUDIENCE">Audience</option>
+                <option value="STREAMER">Streamer</option>
+              </select>
+              <Button onClick={switchRole} disabled={!session}>Update</Button>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
-      <Card className="p-4">
-        <div className="font-medium mb-2">Ingest Status</div>
-        <div className="text-sm text-muted-foreground">Offline (demo)</div>
+      <Card>
+        <CardHeader><CardTitle>Wallet</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <div className="text-sm">Connected: <code>{wallet ?? 'Not connected'}</code></div>
+          <Button variant="outline" onClick={lockWallet} disabled={!session}>Connect & Lock to Account</Button>
+          <p className="text-xs text-muted-foreground">Once locked, only this account can use the wallet with StreamFi services.</p>
+        </CardContent>
       </Card>
+
+      {status && <p className="text-sm">{status}</p>}
     </main>
-  )
+  );
 }
