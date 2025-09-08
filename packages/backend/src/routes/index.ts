@@ -11,18 +11,20 @@ import chatRoutes from '../modules/stream/chat.routes';
 import paymentsRoutes from '../modules/monetization/payments.routes';
 import yellowRoutes from '../modules/yellow/yellow.routes';
 import reactionsRoutes from '../modules/reactions/reactions.routes';
+import nmsRoutes from '../modules/stream/nms.routes';
 
 const router = Router();
 router.use('/auth', authBurstLimiter, authRoutes);
-router.use('/users', userRoutes);
 router.use('/stream', streamRoutes);
 router.use('/monetization', monetizationRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/vaults', vaultRoutes);
 router.use('/admin', adminRoutes);
 router.use('/chat', chatRoutes);
+router.use('/users', userRoutes);
 router.use('/payments', authBurstLimiter, paymentsRoutes);
 router.use('/yellow', yellowRoutes);
 router.use('/reactions', reactionsRoutes);
+router.use('/nms', nmsRoutes);
 
 export default router;

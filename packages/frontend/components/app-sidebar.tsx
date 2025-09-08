@@ -16,6 +16,8 @@ import {
 // --- ADD THIS IMPORT ---
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 
+type Role = "STREAMER" | "AUDIENCE" | "ADMIN" | "streamer" | "viewer" | "admin" | null;
+
 const data = {
   user: {
     name: "Streamer",
@@ -73,13 +75,32 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const session = useAuthStore((s) => s.session)
   const signOut = useAuthStore((s) => s.signOut)
   const user = session ? { name: session.userId, email: `${session.userId}@streamfi`, avatar: "https://github.com/shadcn.png" } : data.user
+  const role = (session?.role || null) as Role;
+  // Filter nav based on role
+  const nav = data.navMain.filter((item) => {
+    if (item.title === 'Admin') return role === 'ADMIN' || role === 'admin';
+    if (item.title === 'Streams') return true; // both can see
+    if (item.title === 'Dashboard' || item.title === 'Notifications' || item.title === 'Settings') return true;
+    if (item.title === 'Monetization') return role === 'STREAMER' || role === 'streamer' || role === 'ADMIN' || role === 'admin';
+    return true;
+  }).map((item) => {
+    if (item.title === 'Streams') {
+      const filtered = { ...item } as typeof item;
+      filtered.items = (item.items || []).filter((sub) => {
+        if (sub.title === 'My Stream') return role === 'STREAMER' || role === 'streamer' || role === 'ADMIN' || role === 'admin';
+        return true;
+      });
+      return filtered;
+    }
+    return item;
+  });
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <div className="px-2 py-2 text-sm font-semibold">StreamFi</div>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain items={nav} />
       </SidebarContent>
       <SidebarFooter>
         {/* --- ADD THE CONNECT BUTTON HERE --- */}

@@ -5,7 +5,8 @@ export const config = {
   HLS_PATH_TEMPLATE: process.env.NEXT_PUBLIC_HLS_PATH_TEMPLATE || "/live/{id}/index.m3u8",
   // Example: wss://chat.yourdomain.tld
   CHAT_WS_BASE: process.env.NEXT_PUBLIC_CHAT_WS_BASE || "wss://example.com",
-  API_BASE: process.env.NEXT_PUBLIC_API_BASE || "",
+  // Default to Next.js rewrite path for local/dev and docker
+  API_BASE: process.env.NEXT_PUBLIC_API_BASE || "/api",
 };
 
 export function hlsUrlFor(id: string) {
