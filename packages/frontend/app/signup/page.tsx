@@ -12,6 +12,7 @@ export default function SignupPage() {
   const router = useRouter()
   const setSession = useAuthStore((s) => s.setSession)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const form = e.currentTarget
@@ -19,15 +20,21 @@ export default function SignupPage() {
     const password = (form.elements.namedItem("password") as HTMLInputElement)?.value || ""
     const role = (form.elements.namedItem("role") as HTMLSelectElement)?.value as 'STREAMER' | 'AUDIENCE' | ''
     setLoading(true)
-    const session = await auth.signUp({ email, password })
-    setSession(session)
-    // Set initial role if chosen
+    setError(null)
     try {
-      if (session && (role === 'STREAMER' || role === 'AUDIENCE')) {
-        await users.setRole(role)
-      }
-    } catch { /* ignore */ }
-    router.replace("/dashboard")
+      const session = await auth.signUp({ email, password })
+      setSession(session)
+      try {
+        if (session && (role === 'STREAMER' || role === 'AUDIENCE')) {
+          await users.setRole(role)
+        }
+      } catch { /* ignore role error */ }
+      router.replace("/dashboard")
+    } catch (err: any) {
+      setError(err?.message || 'Signup failed')
+    } finally {
+      setLoading(false)
+    }
   }
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -50,6 +57,7 @@ export default function SignupPage() {
             </select>
           </div>
           <Button type="submit" className="w-full" disabled={loading}>{loading ? "Creating..." : "Create account"}</Button>
+          {error && <div className="text-sm text-red-500 break-words">{error}</div>}
           <div className="text-center text-sm text-muted-foreground">
             Already have an account? <a className="underline underline-offset-4" href="/auth">Sign in</a>
           </div>

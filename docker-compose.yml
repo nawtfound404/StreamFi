@@ -1,24 +1,4 @@
-# StreamFi/docker-compose.yml
-
 services:
-  # Database Service (MongoDB)
-  db:
-    image: mongo:7
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: user
-      MONGO_INITDB_ROOT_PASSWORD: password
-    networks:
-      - streamfi-net
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Node Media Server
   nms:
     build:
@@ -26,9 +6,9 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1935:1935"   # RTMP ingest
-      - "8081:8080"   # HLS HTTP (host:container)
+      - "8081:8080"   # HLS HTTP (external:internal)
     env_file:
-      - ./packages/backend/.env
+      - ./packages/media-server/.env   # keep NMS-specific envs here
     networks:
       - streamfi-net
 
@@ -42,13 +22,14 @@ services:
     env_file:
       - ./packages/backend/.env
     depends_on:
-      db:
-        condition: service_healthy
-      nms:
-        condition: service_started
-    environment: {}
+      - nms
     networks:
       - streamfi-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Frontend Service
   frontend:
@@ -56,14 +37,14 @@ services:
       context: ./packages/frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
-        NEXT_PUBLIC_HLS_BASE: ${NEXT_PUBLIC_HLS_BASE}
-        NEXT_PUBLIC_CHAT_WS_BASE: ${NEXT_PUBLIC_CHAT_WS_BASE}
+        NEXT_PUBLIC_API_BASE: /api
+        NEXT_PUBLIC_HLS_BASE: http://localhost:8081
+        NEXT_PUBLIC_CHAT_WS_BASE: /socket.io
     ports:
       - "3000:3000"
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - ./packages/frontend/.env.local
     environment:
@@ -74,6 +55,3 @@ services:
 networks:
   streamfi-net:
     driver: bridge
-
-volumes:
-  mongo_data:

@@ -11,6 +11,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { withReqId } from './utils/logger';
 import { errorHandler } from './middlewares/errorHandler';
 import { rateLimiter } from './middlewares/rateLimiter';
+import { pingDatabase } from './lib/mongo';
+import { isReady } from './config/state';
 import apiRoutes from './routes';
 
 const app = express();
@@ -66,13 +68,20 @@ app.use(responseTime((req: Request, res: Response, time: number) => {
 }));
 // CSRF setup with cookie-based secret so no server session is required
 const csrfProtection = csrf({ cookie: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' } });
+const csrfBypassPaths = new Set([
+	'/api/auth/login',
+	'/api/auth/signup',
+]);
 app.use((req, res, next) => {
-	const isWebhook = req.path.startsWith('/api/payments/stripe/webhook')
-		|| req.path.startsWith('/api/payments/upi/webhook')
-		|| req.path.startsWith('/api/payments/paypal/webhook');
+	const p = req.path;
+	const isWebhook = p.startsWith('/api/payments/stripe/webhook')
+		|| p.startsWith('/api/payments/upi/webhook')
+		|| p.startsWith('/api/payments/paypal/webhook');
 	const isUnsafe = ['POST','PUT','PATCH','DELETE'].includes(req.method);
 	const isBrowser = !!req.headers.origin;
-	if (isUnsafe && isBrowser && !isWebhook) return csrfProtection(req, res, next);
+	if (isUnsafe && isBrowser && !isWebhook && !csrfBypassPaths.has(p)) {
+		return csrfProtection(req, res, next);
+	}
 	return next();
 });
 
@@ -103,10 +112,27 @@ app.get('/', (_req, res) => {
 		apiBase: '/api',
 	});
 });
-app.get('/health', (_req, res) => res.status(200).json({ status: 'UP' }));
+app.get('/health', async (_req, res) => {
+	let db = 'UNKNOWN';
+	try {
+		const ok = await Promise.race([
+			pingDatabase(),
+			new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 700))
+		]);
+		db = ok ? 'UP' : 'DOWN';
+	} catch {
+		db = 'DOWN';
+	}
+	return res.status(200).json({ status: 'UP', db });
+});
 app.get('/metrics', async (_req, res) => {
 	res.set('Content-Type', client.register.contentType);
 	res.end(await client.register.metrics());
+});
+// Readiness endpoint: returns 503 until initial Mongo connect succeeded
+app.get('/ready', (_req, res) => {
+	const ready = isReady();
+	return res.status(ready ? 200 : 503).json({ status: ready ? 'READY' : 'NOT_READY' });
 });
 app.use(errorHandler);
 export default app;

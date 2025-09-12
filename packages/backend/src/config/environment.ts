@@ -10,8 +10,14 @@ import 'dotenv/config'; // Ensures .env file is loaded and available to process.
 const envSchema = z.object({
   // --- Core & Database ---
   PORT: z.coerce.number().default(8000),
-  // Accept either Postgres or Mongo connection strings; basic presence check
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  // Enhanced MongoDB URL validation
+  DATABASE_URL: z.string()
+    .min(1, 'DATABASE_URL is required')
+    .refine((url) => {
+      return url.startsWith('mongodb://') || url.startsWith('mongodb+srv://');
+    }, 'DATABASE_URL must be a valid MongoDB connection string'),
+  // Optional explicit DB name if the URI omits it (e.g. ends with /?query...)
+  MONGO_DB_NAME: z.string().optional(),
   
   // --- Authentication ---
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is a required environment variable.'),
@@ -52,10 +58,20 @@ const envSchema = z.object({
 // Parse and validate the environment variables from `process.env`
 const parsedEnv = envSchema.parse(process.env);
 
+// Defensive runtime guard: if someone provides a PostgreSQL-like URL, fail fast with clear message
+if (process.env.DATABASE_URL && /^(postgres|mysql|mssql):\/\//i.test(process.env.DATABASE_URL)) {
+  // eslint-disable-next-line no-console
+  console.error('\nFATAL: DATABASE_URL appears to be a SQL connection string but this service uses MongoDB.');
+  console.error('Provided DATABASE_URL=', process.env.DATABASE_URL);
+  console.error('Expected format: mongodb://user:password@host:27017/dbname?authSource=admin');
+  process.exit(1);
+}
+
 // Export a structured, type-safe object that mirrors your original structure for easy access
 export const env = {
   port: parsedEnv.PORT,
   databaseUrl: parsedEnv.DATABASE_URL,
+  mongoDbName: parsedEnv.MONGO_DB_NAME,
   jwt: {
     secret: parsedEnv.JWT_SECRET,
     expiresIn: parsedEnv.JWT_EXPIRES_IN,
