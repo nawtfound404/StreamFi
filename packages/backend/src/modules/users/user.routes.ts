@@ -5,6 +5,14 @@ import { authMiddleware, AuthRequest } from '../../middlewares/auth.middleware';
 
 const router = Router();
 
+// Current user profile (401 if unauthenticated)
+router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
+  await connectMongo();
+  const me: any = await UserModel.findById(req.user!.id).select({ email: 1, role: 1, username: 1 }).lean();
+  if (!me) return res.status(404).json({ message: 'User not found' });
+  return res.json({ id: req.user!.id, email: me.email || null, role: me.role, username: me.username || null });
+});
+
 router.post('/role', authMiddleware, async (req: AuthRequest, res) => {
   const { role } = req.body as { role: 'STREAMER' | 'AUDIENCE' };
   if (!role) return res.status(400).json({ message: 'role required' });

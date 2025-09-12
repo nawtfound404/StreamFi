@@ -1,12 +1,9 @@
+const rawApiBase = process.env.NEXT_PUBLIC_API_BASE || '/api';
 export const config = {
-  // Example: http://localhost:8000 for Node Media Server HTTP server
-  HLS_BASE: process.env.NEXT_PUBLIC_HLS_BASE || "",
-  // Template like "/live/{id}/index.m3u8" for NMS; fallback to "/hls/{id}.m3u8"
-  HLS_PATH_TEMPLATE: process.env.NEXT_PUBLIC_HLS_PATH_TEMPLATE || "/live/{id}/index.m3u8",
-  // Example: wss://chat.yourdomain.tld
-  CHAT_WS_BASE: process.env.NEXT_PUBLIC_CHAT_WS_BASE || "wss://example.com",
-  // Default to Next.js rewrite path for local/dev and docker
-  API_BASE: process.env.NEXT_PUBLIC_API_BASE || "/api",
+  HLS_BASE: process.env.NEXT_PUBLIC_HLS_BASE || '',
+  HLS_PATH_TEMPLATE: process.env.NEXT_PUBLIC_HLS_PATH_TEMPLATE || '/live/{id}/index.m3u8',
+  CHAT_WS_BASE: process.env.NEXT_PUBLIC_CHAT_WS_BASE || 'ws://localhost:8000',
+  API_BASE: rawApiBase.endsWith('/') ? rawApiBase.slice(0, -1) : rawApiBase,
 };
 
 export function hlsUrlFor(id: string) {

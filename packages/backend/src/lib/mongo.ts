@@ -1,14 +1,63 @@
 import mongoose, { Schema, model, models } from 'mongoose';
 import { env } from '../config/environment';
 import { PayoutStatus, StreamStatus, TransactionStatus, TransactionType, UserRole } from '../types/models';
+import { logger } from '../utils/logger';
 
 let connected = false;
-export async function connectMongo() {
+export async function connectMongo(retries = 5) {
   if (connected) return mongoose.connection;
   mongoose.set('strictQuery', true);
-  await mongoose.connect(env.databaseUrl);
-  connected = true;
+  let attempt = 0;
+  const baseDelay = 500; // ms
+  const hasDbInUri = /mongodb(\+srv)?:\/\/[^/]+\/([^?]+)/.test(env.databaseUrl);
+  while (!connected && attempt <= retries) {
+    attempt++;
+    try {
+      if (attempt === 1) logger.info('🗄️  Connecting to MongoDB...');
+      else logger.warn(`🔁 MongoDB reconnect attempt ${attempt}/${retries}`);
+      const opts: any = {
+        serverSelectionTimeoutMS: 6000,
+        maxPoolSize: 10,
+      };
+      if (!hasDbInUri && env.mongoDbName) {
+        opts.dbName = env.mongoDbName;
+        logger.info(`📁 Using dbName override '${env.mongoDbName}' (not present in URI)`);
+      }
+      await mongoose.connect(env.databaseUrl, opts);
+      connected = true;
+      logger.info('✅ MongoDB connected');
+      break;
+    } catch (err: any) {
+      if (err?.message?.includes('Authentication failed')) {
+        logger.error({ err: err.message }, '❌ MongoDB authentication failed. Check DATABASE_URL credentials vs docker-compose MONGO_INITDB_* values.');
+        throw err; // Auth errors won't fix with retries
+      }
+      if (err?.name === 'MongooseServerSelectionError') {
+        logger.error({ reason: err.reason?.message }, '🌐 Mongo server selection failed (network/DNS/firewall). For Atlas ensure IP is whitelisted.');
+      }
+      if (attempt > retries) {
+        logger.error({ err }, '❌ MongoDB connection failed after retries');
+        throw err;
+      }
+      const delay = baseDelay * attempt;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
   return mongoose.connection;
+}
+
+// Add database health check function
+export async function pingDatabase(): Promise<boolean> {
+  try {
+    await connectMongo();
+  const db = mongoose.connection.db;
+  if (!db) return false;
+  await db.admin().command({ ping: 1 });
+    return true;
+  } catch (e) {
+    console.error('MongoDB ping failed:', e);
+    return false;
+  }
 }
 
 const userSchema = new Schema({

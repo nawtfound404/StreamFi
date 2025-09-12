@@ -5,21 +5,24 @@ FROM node:20-alpine
 WORKDIR /usr/src/app
 
 # Install system dependencies
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl curl
 
 # Copy package files first to leverage Docker's build cache
 # Build context is packages/backend
 COPY package*.json ./
-RUN npm install
+# Remove any residual prisma artifacts before installing
+RUN rm -rf prisma && npm install && npm prune --production=false && npm cache clean --force
 
-# Copy the backend's source code
 COPY src ./src
 COPY tsconfig.json ./
+# Double ensure prisma not copied back in (in case of stale host dir)
+RUN rm -rf prisma src/lib/prisma.ts || true
 
 # ABI is in src/services/abi/Nitrolite.ts, no external copy needed
 
 # Build the TypeScript project
-RUN npm run build
+RUN npm run build \
+	&& rm -f dist/lib/prisma.js dist/lib/prisma.js.map || true
 
 # Expose the application port
 EXPOSE 8000

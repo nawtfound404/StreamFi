@@ -7,6 +7,8 @@ import { setSocket } from './lib/socket';
 import { env } from './config/environment';
 import { blockchainService } from './services/blockchain.service';
 import { nftIndexer } from './services/nft-indexer.service';
+import { connectMongo } from './lib/mongo';
+import { markReady } from './config/state';
 
 const PORT = env.port || 8000;
 
@@ -29,10 +31,34 @@ setSocket(io);
 
 onSocketConnection(io);
 
-httpServer.listen(PORT, () => {
-  logger.info(`🚀 Server is running on port ${PORT}`);
-  blockchainService.listenForDonations();
-  // Kick off NFT indexer (non-blocking)
-  //nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
-  //nftIndexer.subscribe();
-});
+async function start() {
+  let dbOk = false;
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      await connectMongo();
+      dbOk = true;
+    } catch (e) {
+      logger.error({ err: e }, 'Failed initial MongoDB connection');
+    }
+  }
+  if (dbOk) markReady();
+  httpServer.listen(PORT, () => {
+    logger.info(`🚀 Server is running on port ${PORT}`);
+    if (process.env.NODE_ENV !== 'test') {
+      try { blockchainService.listenForDonations(); } catch (e) { logger.warn({ err: e }, 'Blockchain listener init failed'); }
+      // nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
+      // nftIndexer.subscribe();
+    }
+  });
+}
+
+function shutdown(signal: string) {
+  logger.info(`${signal} received. Shutting down...`);
+  httpServer.close(() => {
+    import('mongoose').then(m => m.connection.close().catch(()=>{})).finally(() => process.exit(0));
+  });
+  setTimeout(() => process.exit(1), 8000).unref();
+}
+['SIGINT','SIGTERM'].forEach(sig => process.on(sig as NodeJS.Signals, () => shutdown(sig)));
+
+start();
