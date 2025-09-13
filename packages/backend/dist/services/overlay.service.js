@@ -9,6 +9,7 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const environment_1 = require("../config/environment");
 const eventRateLimiter_1 = require("../utils/eventRateLimiter");
 const mongo_1 = require("../lib/mongo");
+const socket_1 = require("../lib/socket");
 // Fix the type issue by using the correct Server type
 const onSocketConnection = (io) => {
     // Use the 'on' method directly on the io instance
@@ -29,19 +30,50 @@ const onSocketConnection = (io) => {
         catch (e) {
             return next(new Error('unauthorized'));
         }
-    }).on('connection', (socket) => {
+    }).on('connection', async (socket) => {
         logger_1.logger.info(`New client connected: ${socket.id}`);
-        const streamId = socket.handshake.query.streamId || '';
+        const idOrKey = socket.handshake.query.streamId || '';
+        let joinedRooms = [];
         let lastEmit = 0;
         const minIntervalMs = 1000; // 1 msg/sec per user
         const burstLimit = 5; // allow small bursts
         const windowMs = 10_000; // 10 seconds
         const timestamps = [];
-        if (streamId) {
-            // Authorization: viewer can join any public stream room; streamer/admin can join their own admin rooms
-            // For now, enforce that only streamer of the streamId (by DB relation) or admins can join moderation room
-            socket.join(streamId);
-            logger_1.logger.info(`Socket ${socket.id} joined room ${streamId}`);
+        if (idOrKey) {
+            try {
+                await (0, mongo_1.connectMongo)();
+                // Find by id or by key to normalize
+                const stream = await (async () => {
+                    try {
+                        return await mongo_1.StreamModel.findById(idOrKey).select({ _id: 1, streamKey: 1 }).lean();
+                    }
+                    catch {
+                        return null;
+                    }
+                })() || await mongo_1.StreamModel.findOne({ streamKey: idOrKey }).select({ _id: 1, streamKey: 1 }).lean();
+                if (stream) {
+                    const id = String(stream._id);
+                    const key = stream.streamKey;
+                    socket.join(id);
+                    joinedRooms.push(id);
+                    if (key && key !== id) {
+                        socket.join(key);
+                        joinedRooms.push(key);
+                    }
+                    logger_1.logger.info(`Socket ${socket.id} joined rooms ${joinedRooms.join(',')}`);
+                    // Notify current viewer counts
+                    for (const room of joinedRooms) {
+                        io.to(room).emit('viewer_count', { viewers: (0, socket_1.getRoomSize)(room) });
+                    }
+                }
+                else {
+                    socket.join(idOrKey);
+                    joinedRooms.push(idOrKey);
+                    logger_1.logger.info(`Socket ${socket.id} joined room ${idOrKey}`);
+                    io.to(idOrKey).emit('viewer_count', { viewers: (0, socket_1.getRoomSize)(idOrKey) });
+                }
+            }
+            catch { }
         }
         socket.on('reaction', async (data) => {
             const ok = (0, eventRateLimiter_1.allowEvent)(socket.userId, 'reaction', { limit: 10, windowMs: 10_000 });
@@ -50,7 +82,8 @@ const onSocketConnection = (io) => {
             const uid = socket.userId;
             try {
                 await (0, mongo_1.connectMongo)();
-                const stream = await mongo_1.StreamModel.findById(data.streamId).lean();
+                // Load stream to access monetization rules
+                const stream = await mongo_1.StreamModel.findById(data.streamId).select({ _id: 1, monetizationRules: 1 }).lean();
                 if (!stream)
                     return;
                 const rules = stream.monetizationRules || {};
@@ -87,7 +120,7 @@ const onSocketConnection = (io) => {
                 return; // drop if under cooldown
             timestamps.push(now);
             lastEmit = now;
-            const room = payload.streamId || streamId;
+            const room = payload.streamId || idOrKey;
             if (!room || !payload.text?.trim())
                 return;
             io.to(room).emit('chat_message', {
@@ -99,6 +132,13 @@ const onSocketConnection = (io) => {
         });
         socket.on('disconnect', () => {
             logger_1.logger.info(`Client disconnected: ${socket.id}`);
+            // Update viewer counts for joined rooms
+            try {
+                for (const room of joinedRooms) {
+                    io.to(room).emit('viewer_count', { viewers: io.sockets.adapter.rooms.get(room)?.size || 0 });
+                }
+            }
+            catch { /* noop */ }
         });
     });
     // Moderation namespace: only streamer who owns streamId or admin can join

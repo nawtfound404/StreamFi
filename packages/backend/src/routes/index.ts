@@ -9,9 +9,9 @@ import vaultRoutes from '../modules/vaults/vault.routes';
 import adminRoutes from '../modules/admin/admin.routes';
 import chatRoutes from '../modules/stream/chat.routes';
 import paymentsRoutes from '../modules/monetization/payments.routes';
-import yellowRoutes from '../modules/yellow/yellow.routes';
 import reactionsRoutes from '../modules/reactions/reactions.routes';
 import nmsRoutes from '../modules/stream/nms.routes';
+import channelRoutes from '../modules/channels/channel.routes';
 import { connectMongo, UserModel } from '../lib/mongo';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/environment';
@@ -26,9 +26,9 @@ router.use('/admin', adminRoutes);
 router.use('/chat', chatRoutes);
 router.use('/users', userRoutes);
 router.use('/payments', authBurstLimiter, paymentsRoutes);
-router.use('/yellow', yellowRoutes);
 router.use('/reactions', reactionsRoutes);
 router.use('/nms', nmsRoutes);
+router.use('/channels', channelRoutes);
 
 // Lightweight diagnostic endpoint (non-sensitive). Remove in production.
 router.get('/debug/db', async (_req, res) => {

@@ -17,13 +17,18 @@ const authMiddleware = async (req, res, next) => {
     try {
         await (0, mongo_1.connectMongo)();
         const decoded = jsonwebtoken_1.default.verify(token, environment_1.env.jwt.secret);
-        // Enforce ban: check DB for banned flag
-        const user = await mongo_1.UserModel.findById(decoded.id).select('role banned').lean();
+        // Enforce ban: check DB for banned flag and pull walletAddress for channel flows
+        const user = await mongo_1.UserModel.findById(decoded.id).select('role banned walletAddress').lean();
         if (!user)
             return res.status(401).json({ message: 'Unauthorized: User not found' });
         if (user.banned)
             return res.status(403).json({ message: 'Account banned' });
-        req.user = { id: String(user._id), role: user.role };
+        req.user = {
+            id: String(user._id),
+            role: user.role,
+            walletAddress: user.walletAddress || undefined,
+            address: user.walletAddress || undefined,
+        };
         next();
     }
     catch (error) {

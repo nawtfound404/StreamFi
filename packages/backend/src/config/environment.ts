@@ -29,15 +29,23 @@ const envSchema = z.object({
   JSON_RPC_PROVIDER: z.string().url('JSON_RPC_PROVIDER must be a valid RPC URL.'),
   CREATOR_VAULT_ADDRESS: z.string().startsWith('0x', 'Contract address must be a valid hex string.'),
   ADMIN_PRIVATE_KEY: z.string().startsWith('0x', 'Admin private key must be a valid hex string.'),
-  // Optional contract deploy block to bound event scans
-  NITROLITE_DEPLOY_BLOCK: z.coerce.number().optional(),
+  // Contract deploy block to bound event scans (required)
+  NITROLITE_DEPLOY_BLOCK: z.coerce.number().int().nonnegative(),
 
   // --- Payments ---
   STRIPE_SECRET_KEY: z.string().optional(),
 
-  // --- Yellow SDK / API ---
-  YELLOW_API_KEY: z.string().min(1, 'YELLOW_API_KEY is required.'),
-  YELLOW_ENVIRONMENT: z.enum(['mainnet', 'testnet']).default('testnet'),
+  // --- Channel settlement / Sepolia-only config ---
+  // Deployed on-chain addresses (required)
+  NITROLITE_TOKEN_ADDRESS: z.string().startsWith('0x').length(42),
+  NITROLITE_CUSTODY_ADDRESS: z.string().startsWith('0x').length(42),
+  NITROLITE_ADJUDICATOR_ADDRESS: z.string().startsWith('0x').length(42),
+  // Chain id must be Sepolia
+  CHANNEL_CHAIN_ID: z.coerce.number().refine((n) => n === 11155111, {
+    message: 'CHANNEL_CHAIN_ID must be 11155111 (Sepolia)'
+  }),
+  MIN_CHANNEL_DEPOSIT_WEI: z.coerce.number().optional(),
+  MIN_TIP_WEI: z.coerce.number().optional(),
 
   // --- CORS / Frontend ---
   CORS_ORIGIN: z.string().optional(),
@@ -84,14 +92,23 @@ export const env = {
     rpcProvider: parsedEnv.JSON_RPC_PROVIDER,
     creatorVaultAddress: parsedEnv.CREATOR_VAULT_ADDRESS,
     adminPrivateKey: parsedEnv.ADMIN_PRIVATE_KEY,
-  deployFromBlock: parsedEnv.NITROLITE_DEPLOY_BLOCK ?? 0,
+  deployFromBlock: parsedEnv.NITROLITE_DEPLOY_BLOCK,
   },
   stripe: {
     secretKey: parsedEnv.STRIPE_SECRET_KEY,
   },
   yellow: {
-    apiKey: parsedEnv.YELLOW_API_KEY,
-    environment: parsedEnv.YELLOW_ENVIRONMENT,
+    // Retain object shape for existing imports; rename semantics to nitrolite stack
+    channelContract: parsedEnv.NITROLITE_CUSTODY_ADDRESS,
+    chainId: parsedEnv.CHANNEL_CHAIN_ID,
+    minChannelDepositWei: parsedEnv.MIN_CHANNEL_DEPOSIT_WEI || 100000000000000n,
+    minTipWei: parsedEnv.MIN_TIP_WEI || 100000000000n,
+  },
+  nitrolite: {
+    token: parsedEnv.NITROLITE_TOKEN_ADDRESS,
+    custody: parsedEnv.NITROLITE_CUSTODY_ADDRESS,
+    adjudicator: parsedEnv.NITROLITE_ADJUDICATOR_ADDRESS,
+    vault: parsedEnv.CREATOR_VAULT_ADDRESS,
   },
   corsOrigin: parsedEnv.CORS_ORIGIN,
   nms: {

@@ -1,0 +1,23 @@
+{
+  "abi": [
+    { "type":"event","name":"DisputeAdjudicated","inputs":[
+      {"name":"channelId","type":"bytes32","indexed":true},
+      {"name":"viewer","type":"address","indexed":true},
+      {"name":"spent","type":"uint256","indexed":false},
+      {"name":"nonce","type":"uint64","indexed":false},
+      {"name":"valid","type":"bool","indexed":false}
+    ],"anonymous":false },
+    { "type":"function","name":"adjudicate","stateMutability":"nonpayable","inputs":[
+      {"name":"state","type":"tuple","components":[
+        {"name":"channelId","type":"bytes32"},
+        {"name":"vaultId","type":"uint256"},
+        {"name":"viewer","type":"address"},
+        {"name":"deposit","type":"uint256"},
+        {"name":"spent","type":"uint256"},
+        {"name":"nonce","type":"uint64"}
+      ]},
+      {"name":"signature","type":"bytes"},
+      {"name":"expectedViewer","type":"address"}
+    ],"outputs":[] }
+  ]
+}
