@@ -157,6 +157,22 @@ const nftSyncStateSchema = new Schema({
   lastBlock: { type: Schema.Types.Mixed, default: 0 },
 }, { timestamps: { updatedAt: 'updatedAt', createdAt: false } });
 
+// Off-chain microtransaction channel state
+const channelSchema = new Schema({
+  channelId: { type: String, unique: true, index: true },
+  streamId: { type: Schema.Types.ObjectId, ref: 'Stream', index: true },
+  viewerAddress: { type: String, index: true },
+  streamerUserId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+  streamerVaultId: { type: Schema.Types.Mixed },
+  depositWei: { type: String, required: true },
+  spentWei: { type: String, default: '0' },
+  nonce: { type: Number, default: 0 },
+  status: { type: String, enum: ['OPEN','CLOSING','CLOSED'], default: 'OPEN', index: true },
+  openTxHash: { type: String },
+  closeTxHash: { type: String },
+  lastSig: { type: String },
+}, { timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' } });
+
 export const UserModel = models.User || model('User', userSchema);
 export const StreamModel = models.Stream || model('Stream', streamSchema);
 export const TransactionModel = models.Transaction || model('Transaction', transactionSchema);
@@ -168,3 +184,4 @@ export const ReactionModel = models.Reaction || model('Reaction', reactionSchema
 export const BalanceModel = models.Balance || model('Balance', balanceSchema);
 export const NftTokenModel = models.NftToken || model('NftToken', nftTokenSchema);
 export const NftSyncStateModel = models.NftSyncState || model('NftSyncState', nftSyncStateSchema);
+export const ChannelModel = models.Channel || model('Channel', channelSchema);

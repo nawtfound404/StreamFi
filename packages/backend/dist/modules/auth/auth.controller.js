@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getMe = exports.signup = exports.login = void 0;
 const authService = __importStar(require("./auth.service"));
+const logger_1 = require("../../utils/logger");
 const login = async (req, res, next) => {
     try {
         const { email, password } = req.body;
@@ -49,10 +50,14 @@ exports.login = login;
 const signup = async (req, res, next) => {
     try {
         const { email, password, name } = req.body;
+        // Structured debug log (safe fields only). Remove or gate for production if noisy.
+        logger_1.logger.info({ email }, 'signup_request');
         const result = await authService.signupUser({ email, password, name });
+        logger_1.logger.info({ email, userId: result.user.id }, 'signup_success');
         res.status(201).json(result);
     }
     catch (error) {
+        logger_1.logger.warn({ err: error?.message, email: (req.body?.email) }, 'signup_failed');
         next(error);
     }
 };

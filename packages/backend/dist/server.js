@@ -11,6 +11,8 @@ const overlay_service_1 = require("./services/overlay.service");
 const socket_1 = require("./lib/socket");
 const environment_1 = require("./config/environment");
 const blockchain_service_1 = require("./services/blockchain.service");
+const mongo_1 = require("./lib/mongo");
+const state_1 = require("./config/state");
 const PORT = environment_1.env.port || 8000;
 const httpServer = http_1.default.createServer(app_1.default);
 /**
@@ -27,11 +29,40 @@ const ioOptions = {
 const io = new socket_io_1.Server(httpServer, ioOptions);
 (0, socket_1.setSocket)(io);
 (0, overlay_service_1.onSocketConnection)(io);
-httpServer.listen(PORT, () => {
-    logger_1.logger.info(`🚀 Server is running on port ${PORT}`);
-    blockchain_service_1.blockchainService.listenForDonations();
-    // Kick off NFT indexer (non-blocking)
-    //nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
-    //nftIndexer.subscribe();
-});
+async function start() {
+    let dbOk = false;
+    if (process.env.NODE_ENV !== 'test') {
+        try {
+            await (0, mongo_1.connectMongo)();
+            dbOk = true;
+        }
+        catch (e) {
+            logger_1.logger.error({ err: e }, 'Failed initial MongoDB connection');
+        }
+    }
+    if (dbOk)
+        (0, state_1.markReady)();
+    httpServer.listen(PORT, () => {
+        logger_1.logger.info(`🚀 Server is running on port ${PORT}`);
+        if (process.env.NODE_ENV !== 'test') {
+            try {
+                blockchain_service_1.blockchainService.listenForDonations();
+            }
+            catch (e) {
+                logger_1.logger.warn({ err: e }, 'Blockchain listener init failed');
+            }
+            // nftIndexer.backfill().then(() => logger.info('✅ NFT backfill complete')).catch((e) => logger.error({ err: e }, 'NFT backfill failed'));
+            // nftIndexer.subscribe();
+        }
+    });
+}
+function shutdown(signal) {
+    logger_1.logger.info(`${signal} received. Shutting down...`);
+    httpServer.close(() => {
+        import('mongoose').then(m => m.connection.close().catch(() => { })).finally(() => process.exit(0));
+    });
+    setTimeout(() => process.exit(1), 8000).unref();
+}
+['SIGINT', 'SIGTERM'].forEach(sig => process.on(sig, () => shutdown(sig)));
+start();
 //# sourceMappingURL=server.js.map

@@ -1,0 +1,13 @@
+{
+  "abi": [
+    { "type": "function", "name": "openChannel", "stateMutability": "payable", "inputs": [
+      { "name": "viewer", "type": "address" },
+      { "name": "streamIdHash", "type": "bytes32" },
+      { "name": "vaultId", "type": "uint256" }
+    ], "outputs": [ { "name": "channelId", "type": "bytes32" } ] },
+    { "type": "function", "name": "closeChannel", "stateMutability": "nonpayable", "inputs": [
+      { "name": "channelId", "type": "bytes32" },
+      { "name": "spent", "type": "uint256" }
+    ], "outputs": [] }
+  ]
+}

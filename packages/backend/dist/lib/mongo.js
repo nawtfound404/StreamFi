@@ -33,24 +33,79 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NftSyncStateModel = exports.NftTokenModel = exports.BalanceModel = exports.ReactionModel = exports.MuteModel = exports.ChatMessageModel = exports.NotificationModel = exports.PayoutRequestModel = exports.TransactionModel = exports.StreamModel = exports.UserModel = void 0;
+exports.ChannelModel = exports.NftSyncStateModel = exports.NftTokenModel = exports.BalanceModel = exports.ReactionModel = exports.MuteModel = exports.ChatMessageModel = exports.NotificationModel = exports.PayoutRequestModel = exports.TransactionModel = exports.StreamModel = exports.UserModel = void 0;
 exports.connectMongo = connectMongo;
+exports.pingDatabase = pingDatabase;
 const mongoose_1 = __importStar(require("mongoose"));
 const environment_1 = require("../config/environment");
 const models_1 = require("../types/models");
+const logger_1 = require("../utils/logger");
 let connected = false;
-async function connectMongo() {
+async function connectMongo(retries = 5) {
     if (connected)
         return mongoose_1.default.connection;
     mongoose_1.default.set('strictQuery', true);
-    await mongoose_1.default.connect(environment_1.env.databaseUrl);
-    connected = true;
+    let attempt = 0;
+    const baseDelay = 500; // ms
+    const hasDbInUri = /mongodb(\+srv)?:\/\/[^/]+\/([^?]+)/.test(environment_1.env.databaseUrl);
+    while (!connected && attempt <= retries) {
+        attempt++;
+        try {
+            if (attempt === 1)
+                logger_1.logger.info('🗄️  Connecting to MongoDB...');
+            else
+                logger_1.logger.warn(`🔁 MongoDB reconnect attempt ${attempt}/${retries}`);
+            const opts = {
+                serverSelectionTimeoutMS: 6000,
+                maxPoolSize: 10,
+            };
+            if (!hasDbInUri && environment_1.env.mongoDbName) {
+                opts.dbName = environment_1.env.mongoDbName;
+                logger_1.logger.info(`📁 Using dbName override '${environment_1.env.mongoDbName}' (not present in URI)`);
+            }
+            await mongoose_1.default.connect(environment_1.env.databaseUrl, opts);
+            connected = true;
+            logger_1.logger.info('✅ MongoDB connected');
+            break;
+        }
+        catch (err) {
+            if (err?.message?.includes('Authentication failed')) {
+                logger_1.logger.error({ err: err.message }, '❌ MongoDB authentication failed. Check DATABASE_URL credentials vs docker-compose MONGO_INITDB_* values.');
+                throw err; // Auth errors won't fix with retries
+            }
+            if (err?.name === 'MongooseServerSelectionError') {
+                logger_1.logger.error({ reason: err.reason?.message }, '🌐 Mongo server selection failed (network/DNS/firewall). For Atlas ensure IP is whitelisted.');
+            }
+            if (attempt > retries) {
+                logger_1.logger.error({ err }, '❌ MongoDB connection failed after retries');
+                throw err;
+            }
+            const delay = baseDelay * attempt;
+            await new Promise(r => setTimeout(r, delay));
+        }
+    }
     return mongoose_1.default.connection;
+}
+// Add database health check function
+async function pingDatabase() {
+    try {
+        await connectMongo();
+        const db = mongoose_1.default.connection.db;
+        if (!db)
+            return false;
+        await db.admin().command({ ping: 1 });
+        return true;
+    }
+    catch (e) {
+        console.error('MongoDB ping failed:', e);
+        return false;
+    }
 }
 const userSchema = new mongoose_1.Schema({
     email: { type: String, unique: true, sparse: true },
     password: String,
     name: String,
+    username: { type: String, unique: true, sparse: true, index: true },
     displayName: String,
     about: String,
     payoutEmail: String,
@@ -72,6 +127,7 @@ const streamSchema = new mongoose_1.Schema({
     monetizationRules: mongoose_1.Schema.Types.Mixed,
     startedAt: Date,
     endedAt: Date,
+    viewers: { type: Number, default: 0 },
 }, { timestamps: { createdAt: 'createdAt', updatedAt: false } });
 const transactionSchema = new mongoose_1.Schema({
     amount: { type: Number, required: true },
@@ -131,6 +187,21 @@ const nftSyncStateSchema = new mongoose_1.Schema({
     _id: { type: String, default: 'nitrolite' },
     lastBlock: { type: mongoose_1.Schema.Types.Mixed, default: 0 },
 }, { timestamps: { updatedAt: 'updatedAt', createdAt: false } });
+// Off-chain microtransaction channel state
+const channelSchema = new mongoose_1.Schema({
+    channelId: { type: String, unique: true, index: true },
+    streamId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Stream', index: true },
+    viewerAddress: { type: String, index: true },
+    streamerUserId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', index: true },
+    streamerVaultId: { type: mongoose_1.Schema.Types.Mixed },
+    depositWei: { type: String, required: true },
+    spentWei: { type: String, default: '0' },
+    nonce: { type: Number, default: 0 },
+    status: { type: String, enum: ['OPEN', 'CLOSING', 'CLOSED'], default: 'OPEN', index: true },
+    openTxHash: { type: String },
+    closeTxHash: { type: String },
+    lastSig: { type: String },
+}, { timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' } });
 exports.UserModel = mongoose_1.models.User || (0, mongoose_1.model)('User', userSchema);
 exports.StreamModel = mongoose_1.models.Stream || (0, mongoose_1.model)('Stream', streamSchema);
 exports.TransactionModel = mongoose_1.models.Transaction || (0, mongoose_1.model)('Transaction', transactionSchema);
@@ -142,4 +213,5 @@ exports.ReactionModel = mongoose_1.models.Reaction || (0, mongoose_1.model)('Rea
 exports.BalanceModel = mongoose_1.models.Balance || (0, mongoose_1.model)('Balance', balanceSchema);
 exports.NftTokenModel = mongoose_1.models.NftToken || (0, mongoose_1.model)('NftToken', nftTokenSchema);
 exports.NftSyncStateModel = mongoose_1.models.NftSyncState || (0, mongoose_1.model)('NftSyncState', nftSyncStateSchema);
+exports.ChannelModel = mongoose_1.models.Channel || (0, mongoose_1.model)('Channel', channelSchema);
 //# sourceMappingURL=mongo.js.map

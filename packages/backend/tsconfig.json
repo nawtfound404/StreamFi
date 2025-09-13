@@ -19,7 +19,8 @@
 
     // --- THE CRITICAL FIX IS HERE ---
     "esModuleInterop": true,
-    "resolveJsonModule": true
+  "resolveJsonModule": true,
+  "isolatedModules": true
   },
   // We also need to tell TypeScript which files to include in its "world"
   "include": ["src/**/*", "../foundry-contracts/out/**/*.json"],

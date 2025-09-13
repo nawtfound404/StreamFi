@@ -34,6 +34,11 @@ const Nitrolite = {
       outputs: [ { name: 'owner', type: 'address', internalType: 'address' } ],
     },
 
+    { type: 'function', name: 'deposit', stateMutability: 'payable',
+      inputs: [ { name: 'vaultId', type: 'uint256', internalType: 'uint256' } ],
+      outputs: [],
+    },
+
     { type: 'function', name: 'tokenURI', stateMutability: 'view',
       inputs: [ { name: 'tokenId', type: 'uint256', internalType: 'uint256' } ],
       outputs: [ { name: 'uri', type: 'string', internalType: 'string' } ],

@@ -19,19 +19,52 @@ export const createVault = async (req: AuthRequest, res: Response) => {
   await connectMongo();
   const user = await UserModel.findById(userId).lean();
 
+  // If user already has a vault, allow updating walletAddress idempotently
     if ((user as any)?.vaultId) {
-      return res.status(409).json({ message: 'User already has a vault' });
+      // If wallet changed, update it; else no-op
+      const needsUpdate = String((user as any)?.walletAddress || '').toLowerCase() !== String(walletAddress).toLowerCase();
+      if (needsUpdate) {
+        try {
+          await UserModel.updateOne({ _id: userId }, { $set: { walletAddress } });
+        } catch (e: any) {
+          if (e?.code === 11000) {
+            return res.status(409).json({ message: 'Wallet address already in use' });
+          }
+          throw e;
+        }
+      }
+      const updatedUser = await UserModel.findById(userId).lean();
+      return res.status(200).json({
+        message: needsUpdate ? 'Vault exists; wallet updated' : 'Vault already exists',
+        vaultId: String((updatedUser as any)?.vaultId ?? ''),
+        user: updatedUser,
+        created: false,
+      });
+    }
+
+    // Try to discover an existing vault on-chain for this owner
+    try {
+      const owned = await blockchainService.getTokensByOwner(walletAddress);
+      if (owned && owned.length > 0) {
+        const attachId = owned[0];
+        await UserModel.updateOne({ _id: userId }, { $set: { walletAddress, vaultId: attachId.toString() } });
+        const updatedUser = await UserModel.findById(userId).lean();
+        return res.status(200).json({ message: 'Attached existing vault', vaultId: attachId.toString(), user: updatedUser, created: false });
+      }
+    } catch (e) {
+      // Non-fatal; fall through to attempt mint/createVault
     }
 
     const newVaultId = await blockchainService.createVaultForUser(walletAddress);
 
-  await UserModel.updateOne({ _id: userId }, { $set: { walletAddress, ...(newVaultId ? { vaultId: newVaultId as any } : {}) } });
-  const updatedUser = await UserModel.findById(userId).lean();
+    await UserModel.updateOne({ _id: userId }, { $set: { walletAddress, ...(newVaultId ? { vaultId: newVaultId as any } : {}) } });
+    const updatedUser = await UserModel.findById(userId).lean();
 
     res.status(201).json({
       message: 'Vault created successfully',
       vaultId: newVaultId?.toString(),
       user: updatedUser,
+      created: true,
     });
   } catch (error) {
     logger.error({ err: error }, 'Vault creation controller error');

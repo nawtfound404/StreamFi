@@ -180,6 +180,18 @@ class BlockchainService {
       return null;
     }
   }
+
+  /** Admin-funded deposit into a creator vault (Nitrolite deposit). */
+  public async depositToVault(vaultId: bigint | number | string, amountWei: bigint): Promise<string> {
+    if (!this.adminWallet) throw new Error('Admin wallet not configured');
+    const id = BigInt(vaultId);
+    const value = amountWei;
+    logger.info(`Depositing ${ethers.formatEther(value)} ETH into vault ${id.toString()}`);
+    const tx = await (this.registryContract as any).deposit(id, { value });
+    const receipt = await tx.wait(1);
+    logger.info(`Deposit tx confirmed: ${tx.hash}`);
+    return receipt.transactionHash;
+  }
 }
 
 export const blockchainService = new BlockchainService();

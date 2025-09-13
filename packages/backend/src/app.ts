@@ -54,8 +54,10 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 app.use(rateLimiter);
 
-// Metrics
-client.collectDefaultMetrics();
+// Metrics (disable in tests to avoid Jest open handle leaks)
+if (process.env.NODE_ENV !== 'test') {
+	client.collectDefaultMetrics();
+}
 const httpRequestDurationMicroseconds = new client.Histogram({
 	name: 'http_request_duration_ms',
 	help: 'Duration of HTTP requests in ms',

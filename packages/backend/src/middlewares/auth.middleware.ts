@@ -7,7 +7,7 @@ import { UserRole } from '../types/models';
 import { connectMongo, UserModel } from '../lib/mongo';
 
 export interface AuthRequest extends Request {
-  user?: { id: string; role: UserRole };
+  user?: { id: string; role: UserRole; walletAddress?: string; address?: string };
 }
 
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -22,11 +22,16 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
   try {
     await connectMongo();
     const decoded = jwt.verify(token, env.jwt.secret) as { id: string; role: UserRole };
-    // Enforce ban: check DB for banned flag
-  const user: any = await UserModel.findById(decoded.id).select('role banned').lean();
+    // Enforce ban: check DB for banned flag and pull walletAddress for channel flows
+  const user: any = await UserModel.findById(decoded.id).select('role banned walletAddress').lean();
   if (!user) return res.status(401).json({ message: 'Unauthorized: User not found' });
   if (user.banned) return res.status(403).json({ message: 'Account banned' });
-  req.user = { id: String(user._id), role: user.role as UserRole };
+  (req as any).user = {
+    id: String(user._id),
+    role: user.role as UserRole,
+    walletAddress: user.walletAddress || undefined,
+    address: user.walletAddress || undefined,
+  };
 
     next();
   } catch (error) {
