@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { env } from '../config/environment';
 import { logger } from '../utils/logger';
-import VaultABI from './abi/Nitrolite';
+import VaultABI from './abi/NitroliteABI';
 import ChannelManagerABI from './abi/ChannelManager.json';
 import TokenABI from './abi/NitroliteToken.json';
 import AdjudicatorABI from './abi/Adjudicator.json';
