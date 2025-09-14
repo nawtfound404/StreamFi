@@ -123,3 +123,10 @@ Steps:
 1. Sign in on the app, then call POST http://localhost:8000/api/stream/ingest with your auth cookie/token to get `{ ingestUrl, streamKey }`.
 2. In OBS, set Server to the `ingestUrl` or rtmp://localhost:1935/live and Stream Key to that `streamKey`.
 3. Start streaming. The HLS URL for players is returned by GET http://localhost:8000/api/stream/{id-or-key}/hls.
+
+## Streaming + Auth Notes
+
+- Sidebar now shows a Login button when not authenticated; once logged in, the user menu returns.
+- Use the My Stream page to provision your ingest and manage stream state; overlay opens at `/watch/{streamKey}`.
+- Docker compose wires media server (RTMP 1935 + HLS 8081), backend (8000), and frontend (3000). Ensure these ports are free.
+- On Windows local builds, if Next.js fails due to a `lightningcss` native binary error, prefer Docker builds or WSL2; the Docker images build correctly for production.

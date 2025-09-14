@@ -20,6 +20,7 @@ export default function StreamerPage() {
   const [streamKey, setStreamKey] = useState<string>("");
   const [streamId, setStreamId] = useState<string>("");
   const [hlsUrl, setHlsUrl] = useState<string>("");
+  const [ingestUrl, setIngestUrl] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [rules, setRules] = useState<ReactionRule[]>([]);
   const [open, setOpen] = useState(false);
@@ -183,10 +184,11 @@ export default function StreamerPage() {
     }
     setCreating(true);
     try {
-      const info = await streaming.createIngest();
-  setStreamKey(info.key);
-  if (info.id) setStreamId(info.id);
-      setHlsUrl(info.hlsUrl || streaming.hlsFor(info.key));
+    const info = await streaming.createIngest();
+    setStreamKey(info.key);
+    if (info.id) setStreamId(info.id);
+    if (info.ingestUrl) setIngestUrl(info.ingestUrl);
+    setHlsUrl(info.hlsUrl || streaming.hlsFor(info.key));
     } catch (e: unknown) {
       const isErr = (val: unknown): val is { message?: string } => typeof val === 'object' && val !== null;
       const msg = isErr(e) && typeof (e as { message?: string }).message === 'string' ? e.message! : 'Failed to create ingest';
@@ -257,7 +259,7 @@ export default function StreamerPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Ingest URL</div>
-              <Input readOnly value={streamKey ? "rtmp://localhost:1935/live" : ""} placeholder="Click Create to get ingest" />
+              <Input readOnly value={streamKey ? (ingestUrl || "rtmp://localhost:1935/live") : ""} placeholder="Click Create to get ingest" />
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Stream Key</div>

@@ -131,7 +131,16 @@ class YellowService {
         return rc.transactionHash;
     }
     async adjudicate(state, signature) {
-        const tx = await this.adjudicator.adjudicate(state, signature, state.viewer);
+        // Coerce potential string inputs to bigint for contract call
+        const normalized = {
+            channelId: state.channelId,
+            vaultId: BigInt(state.vaultId),
+            viewer: state.viewer,
+            deposit: BigInt(state.deposit),
+            spent: BigInt(state.spent),
+            nonce: BigInt(state.nonce),
+        };
+        const tx = await this.adjudicator.adjudicate(normalized, signature, state.viewer);
         const rc = await tx.wait(1);
         return rc.transactionHash;
     }

@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { Tv, LayoutDashboard, Shield, Settings, DollarSign, Home } from "lucide-react"
+import { Tv, LayoutDashboard, Shield, Settings, DollarSign, Home, LogIn } from "lucide-react"
 import { NavMain } from "../components/nav-main"
 import { NavUser } from "../components/nav-user"
 import { useAuthStore } from "../stores/auth-store"
+import Link from "next/link"
 import {
   Sidebar,
   SidebarContent,
@@ -107,7 +108,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <div className="p-2 flex justify-center">
           <ConnectButton />
         </div>
-        <NavUser user={user} onLogout={signOut} />
+        {session ? (
+          <NavUser user={user} onLogout={signOut} />
+        ) : (
+          <div className="p-2">
+            <Link href="/auth" className="block">
+              <button
+                type="button"
+                className="w-full inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent"
+                aria-label="Login"
+              >
+                <LogIn className="w-4 h-4" />
+                Login
+              </button>
+            </Link>
+          </div>
+        )}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

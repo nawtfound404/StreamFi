@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { NftSyncStateModel, NftTokenModel, connectMongo } from '../lib/mongo';
 import { env } from '../config/environment';
 import { logger } from '../utils/logger';
-import NitroliteABI from './abi/Nitrolite';
+import NitroliteABI from './abi/NitroliteABI';
 
 export class NftIndexerService {
   private provider: ethers.JsonRpcProvider;

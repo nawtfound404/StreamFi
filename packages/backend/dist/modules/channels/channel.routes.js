@@ -10,6 +10,25 @@ const mongo_1 = require("../../lib/mongo");
 const ethers_1 = require("ethers");
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.authMiddleware);
+// DEV ONLY: force delete an existing channel to allow reopening with a different viewer
+if (process.env.NODE_ENV !== 'production') {
+    router.delete('/:id', async (req, res) => {
+        try {
+            await (0, mongo_1.connectMongo)();
+            const ch = await mongo_1.ChannelModel.findOne({ channelId: req.params.id }).lean();
+            if (!ch)
+                return res.status(404).json({ message: 'not found' });
+            if (ch.status === 'OPEN') {
+                await mongo_1.ChannelModel.deleteOne({ channelId: req.params.id });
+                return res.json({ ok: true, deleted: true });
+            }
+            return res.status(400).json({ message: 'cannot delete non-OPEN channel' });
+        }
+        catch (e) {
+            return res.status(500).json({ message: e.message });
+        }
+    });
+}
 // Simple in-memory rate limiter for tips (per viewer+channel) to prevent spam
 const tipRateLimiter = (() => {
     const WINDOW_MS = 5000; // 5s window
@@ -63,22 +82,49 @@ router.post('/open', async (req, res) => {
         const user = req.user;
         if (!user)
             return res.status(401).json({ message: 'unauthorized' });
-        const { streamId, depositWei } = req.body;
+        const { streamId, depositWei, viewer: viewerOverride } = req.body;
         if (!streamId || !depositWei)
             return res.status(400).json({ message: 'streamId & depositWei required' });
         const bn = BigInt(depositWei);
         if (bn < BigInt(environment_1.env.yellow.minChannelDepositWei))
             return res.status(400).json({ message: 'deposit below minimum' });
-        const viewer = (user.walletAddress || user.address || '').toLowerCase();
+        // Prefer explicit viewer override if provided and looks like an address; else fallback to authenticated user's wallet
+        const headerViewer = String(req.headers['x-viewer-address'] || '').toLowerCase();
+        const viewer = (viewerOverride?.toLowerCase() && viewerOverride.startsWith('0x')
+            ? viewerOverride.toLowerCase()
+            : (headerViewer.startsWith('0x') ? headerViewer : (user.walletAddress || user.address || '')).toLowerCase());
         if (!viewer.startsWith('0x'))
             return res.status(400).json({ message: 'viewer wallet missing' });
-        const opened = await (0, channel_service_1.openChannel)({ viewer, streamId, depositWei: bn });
+        let opened = await (0, channel_service_1.openChannel)({ viewer, streamId, depositWei: bn });
+        // If server indicates reuse, but the record is CLOSED/CLOSING, re-open it by resetting state
+        if (opened.reused) {
+            await (0, mongo_1.connectMongo)();
+            const existing = await mongo_1.ChannelModel.findOne({ channelId: opened.channelId }).lean();
+            if (existing && existing.status !== 'OPEN') {
+                await mongo_1.ChannelModel.updateOne({ channelId: opened.channelId }, {
+                    $set: {
+                        status: 'OPEN',
+                        depositWei: bn.toString(),
+                        spentWei: '0',
+                        nonce: 0,
+                    },
+                    $unset: { lastSig: "" },
+                });
+                opened = { ...opened, reused: false, record: { ...existing, streamerVaultId: existing.streamerVaultId } };
+            }
+        }
         // Fire on-chain openChannel tx (admin signer) only when newly created
         let txHash = null;
         if (!opened.reused && opened.record?.streamerVaultId) {
             const vaultId = BigInt(opened.record.streamerVaultId);
-            const onchain = await yellow_service_1.yellowService.openChannel(viewer, streamId, vaultId, bn);
-            txHash = onchain.txHash;
+            try {
+                const onchain = await yellow_service_1.yellowService.openChannel(viewer, streamId, vaultId, bn);
+                txHash = onchain.txHash;
+            }
+            catch (e) {
+                // Non-fatal in dev: continue with off-chain channel even if on-chain open fails (e.g., insufficient admin funds)
+                txHash = null;
+            }
         }
         return res.status(200).json({
             channelId: opened.channelId,
@@ -111,15 +157,19 @@ router.get('/:id', async (req, res) => {
 router.post('/:id/tip', tipRateLimiter, async (req, res) => {
     try {
         const user = req.user;
-        const { newSpentWei, nonce, signature, message } = req.body;
+        const { newSpentWei, nonce, signature, message, viewer: viewerOverride } = req.body;
         if (!newSpentWei || typeof nonce !== 'number' || !signature)
             return res.status(400).json({ message: 'missing fields' });
-        const result = await (0, channel_service_1.verifyAndApplyTip)({ channelId: req.params.id, newSpentWei, nonce, signature, viewer: (user.walletAddress || user.address || '').toLowerCase(), message });
+        const headerViewer = String(req.headers['x-viewer-address'] || '').toLowerCase();
+        const viewer = (viewerOverride?.toLowerCase() && viewerOverride.startsWith('0x')
+            ? viewerOverride.toLowerCase()
+            : (headerViewer.startsWith('0x') ? headerViewer : (user.walletAddress || user.address || '')).toLowerCase());
+        const result = await (0, channel_service_1.verifyAndApplyTip)({ channelId: req.params.id, newSpentWei, nonce, signature, viewer, message });
         // Broadcast superchat event (cumulative tip state)
         const ch = await mongo_1.ChannelModel.findOne({ channelId: req.params.id }).lean();
         if (ch?.streamId) {
-            const tipAmountEth = Number(ethers_1.ethers.formatEther(result.tipWei));
-            const cumulativeEth = Number(ethers_1.ethers.formatEther(result.newSpentWei));
+            const tipAmountEth = Number(ethers_1.ethers.formatEther(BigInt(result.tipWei)));
+            const cumulativeEth = Number(ethers_1.ethers.formatEther(BigInt(result.newSpentWei)));
             let tier = 0;
             if (cumulativeEth >= 0.05)
                 tier = 3;
@@ -153,8 +203,18 @@ router.post('/:id/close', async (req, res) => {
         // Also close on-chain channel settlement with spentWei
         const ch = await mongo_1.ChannelModel.findOne({ channelId: req.params.id }).lean();
         const spent = BigInt(ch?.spentWei || '0');
-        const onchain = await yellow_service_1.yellowService.closeChannel(req.params.id, spent);
-        return res.json({ ...out, settlementTx: onchain.txHash });
+        try {
+            const onchain = await yellow_service_1.yellowService.closeChannel(req.params.id, spent);
+            return res.json({ ...out, settlementTx: onchain.txHash });
+        }
+        catch (e) {
+            // Non-fatal in non-production environments: return cooperative close result even if on-chain close fails
+            if (process.env.NODE_ENV !== 'production') {
+                return res.json({ ...out, settlementTx: null, onchainError: e?.message || String(e) });
+            }
+            // In production, propagate error
+            throw e;
+        }
     }
     catch (e) {
         return res.status(400).json({ message: e.message });

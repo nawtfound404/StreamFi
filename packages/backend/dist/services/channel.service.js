@@ -44,8 +44,22 @@ async function openChannel(params) {
     const vaultId = BigInt(streamer.vaultId);
     const channelId = generateChannelId(params.viewer, params.streamId, vaultId);
     const existing = await mongo_1.ChannelModel.findOne({ channelId }).lean();
-    if (existing)
+    if (existing) {
+        // If an existing channel is not OPEN (e.g., CLOSED/CLOSING), "re-open" it by resetting state.
+        if (existing.status !== 'OPEN') {
+            await mongo_1.ChannelModel.updateOne({ channelId }, {
+                $set: {
+                    status: 'OPEN',
+                    depositWei: params.depositWei.toString(),
+                    spentWei: '0',
+                    nonce: 0,
+                },
+                $unset: { lastSig: "" },
+            });
+            return { channelId, reused: false, record: { ...existing, streamerVaultId: streamer.vaultId } };
+        }
         return { reused: true, channelId };
+    }
     const doc = await mongo_1.ChannelModel.create({
         channelId,
         streamId: params.streamId,
@@ -98,7 +112,7 @@ async function verifyAndApplyTip(payload) {
     if (recovered.toLowerCase() !== channel.viewerAddress.toLowerCase())
         throw new Error('Bad signature');
     await mongo_1.ChannelModel.updateOne({ channelId: channel.channelId }, { $set: { spentWei: newSpent.toString(), nonce: payload.nonce, lastSig: payload.signature } });
-    return { tipWei: tip, newSpentWei: newSpent, nonce: payload.nonce };
+    return { tipWei: tip.toString(), newSpentWei: newSpent.toString(), nonce: payload.nonce };
 }
 async function closeChannelCooperative(channelId) {
     await (0, mongo_1.connectMongo)();
@@ -117,8 +131,14 @@ async function closeChannelCooperative(channelId) {
             depositTx = await blockchain_service_1.blockchainService.depositToVault(vaultId, spent);
         }
         catch (e) {
-            await mongo_1.ChannelModel.updateOne({ channelId }, { $set: { status: 'OPEN' } });
-            throw e;
+            // In non-production, allow closing off-chain even if on-chain deposit fails
+            if (process.env.NODE_ENV !== 'production') {
+                depositTx = null;
+            }
+            else {
+                await mongo_1.ChannelModel.updateOne({ channelId }, { $set: { status: 'OPEN' } });
+                throw e;
+            }
         }
     }
     await mongo_1.ChannelModel.updateOne({ channelId }, { $set: { status: 'CLOSED', closeTxHash: depositTx } });
