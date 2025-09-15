@@ -35,9 +35,10 @@ export const streaming = {
       return { streamKey: data.streamKey };
     } catch { return null; }
   },
-  hlsFor(streamId: string): string {
+  // Prefer passing streamId here. Accepts string for backward compat (dev fallback only)
+  hlsFor(idOrKey: string): string {
     // Backend provides dynamic HLS URL
-    return `${API_BASE}/stream/${streamId}/hls`;
+    return `${API_BASE}/stream/${idOrKey}/hls`;
   },
   async chatHistory(idOrKey: string) {
     const res = await fetch(`${API_BASE}/chat/${encodeURIComponent(idOrKey)}/messages`);

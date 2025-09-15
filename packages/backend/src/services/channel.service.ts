@@ -44,7 +44,25 @@ export async function openChannel(params: { viewer: string; streamId: string; de
   if (!stream) throw new Error('Stream not found');
   const streamer: any = await UserModel.findById((stream as any).streamerId).lean();
   if (!streamer) throw new Error('Streamer not found');
-  if (!(streamer as any).vaultId) throw new Error('Streamer has no vault');
+  if (!(streamer as any).vaultId) {
+    // Attempt to discover/attach a vault id using on-chain state
+    if ((streamer as any).walletAddress) {
+      try {
+        const owned = await blockchainService.getTokensByOwner((streamer as any).walletAddress);
+        if (owned && owned.length > 0) {
+          await UserModel.updateOne({ _id: (streamer as any)._id }, { $set: { vaultId: owned[0].toString() } });
+          (streamer as any).vaultId = owned[0].toString();
+        } else if (process.env.NODE_ENV !== 'production') {
+          // Dev fallback: derive deterministic mock vault id to unblock local flows
+          const h = ethers.keccak256(ethers.toUtf8Bytes(((streamer as any).walletAddress as string).toLowerCase()));
+          const v = (BigInt(h) & ((1n << 56n) - 1n)).toString();
+          await UserModel.updateOne({ _id: (streamer as any)._id }, { $set: { vaultId: v } });
+          (streamer as any).vaultId = v;
+        }
+      } catch {}
+    }
+    if (!(streamer as any).vaultId) throw new Error('Streamer has no vault');
+  }
   const vaultId = BigInt((streamer as any).vaultId);
   const channelId = generateChannelId(params.viewer, params.streamId, vaultId);
   const existing: any = await ChannelModel.findOne({ channelId }).lean();
@@ -119,7 +137,12 @@ export async function closeChannelCooperative(channelId: string) {
   await connectMongo();
   const channel: any = await ChannelModel.findOne({ channelId }).lean();
   if (!channel) throw new Error('Channel not found');
-  if (channel.status !== 'OPEN') throw new Error('Already closing/closed');
+  if (channel.status !== 'OPEN') {
+    // Idempotent: return current settled state without error
+    const spent = BigInt(channel.spentWei || '0');
+    const vaultId = BigInt(channel.streamerVaultId);
+    return { ok: true, channelId, deposited: spent.toString(), vaultId: vaultId.toString(), depositTxHash: channel.closeTxHash || null, alreadyClosed: true };
+  }
   // Set status to CLOSING during settlement
   await ChannelModel.updateOne({ channelId }, { $set: { status: 'CLOSING' } });
   const spent = BigInt(channel.spentWei || '0');

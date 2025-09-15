@@ -32,6 +32,10 @@ export function AuthGate() {
       if (pathname !== "/dashboard") router.replace("/dashboard");
       return;
     }
+
+  // Note: /streamer is allowed for any authenticated user; the page itself shows
+  // a CTA to become a creator if the role isn't STREAMER/ADMIN. Keeping this here
+  // avoids a redirect loop and matches the page flow.
   }, [pathname, router, session]);
 
   return null;

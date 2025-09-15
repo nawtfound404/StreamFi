@@ -11,10 +11,38 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Card as UICard } from "@/components/ui/card";
 import { Input as UIInput } from "@/components/ui/input";
 import { admin } from "@/modules/admin";
+import { useAuthStore } from "@/stores/auth-store";
+import { users } from "@/modules/users";
 
 type ReactionRule = { key: string; label: string; priceInPaise: number };
 
 export default function StreamerPage() {
+  const session = useAuthStore((s) => s.session);
+  const setSession = useAuthStore((s) => s.setSession);
+  const role = session?.role?.toString().toUpperCase();
+  const isAllowed = role === 'STREAMER' || role === 'ADMIN';
+  if (!isAllowed) {
+    return (
+      <main className="p-4 space-y-3">
+        <h1 className="text-xl font-semibold">My Stream</h1>
+        <p className="text-sm text-muted-foreground">Only creators can access this page.</p>
+        <Button
+          onClick={async () => {
+            try {
+              await users.setRole('STREAMER');
+              if (session) setSession({ ...session, role: 'STREAMER' } as any);
+              // Hard reload to re-run auth gate and page effects
+              window.location.replace('/streamer');
+            } catch (e) {
+              console.error('Failed to set role', e);
+            }
+          }}
+        >
+          Become a Creator
+        </Button>
+      </main>
+    );
+  }
   const [address, setAddress] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [streamKey, setStreamKey] = useState<string>("");
@@ -63,7 +91,22 @@ export default function StreamerPage() {
         }
       } catch {}
     })();
-  // Chat will load after we create/fetch ingest and know key/stream
+  // Auto-create/fetch ingest for creators
+    (async () => {
+      try {
+        const token = JSON.parse(localStorage.getItem('streamfi-auth') || '{}').state?.session?.token as string | undefined;
+        if (!token) return;
+        const role = JSON.parse(localStorage.getItem('streamfi-auth') || '{}').state?.session?.role?.toString().toUpperCase();
+        if (role === 'STREAMER' || role === 'ADMIN') {
+          const info = await streaming.createIngest();
+          setStreamKey(info.key);
+      if (info.id) setStreamId(info.id);
+      // Prefer HLS by streamId; fall back to key only if id not present (dev fallback)
+      setHlsUrl(info.hlsUrl || (info.id ? streaming.hlsFor(info.id) : streaming.hlsFor(info.key)));
+        }
+      } catch {}
+    })();
+    // Chat will load after we create/fetch ingest and know key/stream
   }, []);
 
   async function onConnect() {
@@ -71,14 +114,14 @@ export default function StreamerPage() {
     setAddress(acc);
   }
 
-  // Viewer count polling
+  // Viewer count polling (use streamId only)
   useEffect(() => {
-    const idOrKey = streamId || streamKey;
-    if (!idOrKey) return;
+    const id = streamId;
+    if (!id) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
       try {
-        const res = await fetch(`/api/stream/${encodeURIComponent(idOrKey)}/status`);
+        const res = await fetch(`/api/stream/${encodeURIComponent(id)}/status`);
         if (res.ok) {
           const data = await res.json() as { viewers?: number; status?: 'IDLE' | 'LIVE' };
           if (typeof data.viewers === 'number') setViewerCount(data.viewers);
@@ -89,17 +132,17 @@ export default function StreamerPage() {
     };
     tick();
     return () => { if (timer) clearTimeout(timer); };
-  }, [streamId, streamKey]);
+  }, [streamId]);
 
-  // Realtime viewer_count and chat via socket
+  // Realtime viewer_count and chat via socket (use streamId only)
   useEffect(() => {
-    const idOrKey = streamId || streamKey;
-    if (!idOrKey) return;
+    const id = streamId;
+    if (!id) return;
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "";
       const wsUrl = (apiBase || window.location.origin).replace(/^http/, "ws");
       const token = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("streamfi-auth") || "{}").state?.session?.token : undefined;
-      const socket = io(wsUrl, { transports: ["websocket"], query: { streamId: String(idOrKey) }, auth: { token } });
+      const socket = io(wsUrl, { transports: ["websocket"], query: { streamId: String(id) }, auth: { token } });
       socketRef.current = socket;
       socket.on("viewer_count", (p: { viewers?: number }) => {
         if (typeof p?.viewers === "number") setViewerCount(p.viewers);
@@ -114,7 +157,7 @@ export default function StreamerPage() {
     } catch {
       // ignore
     }
-  }, [streamId, streamKey]);
+  }, [streamId]);
 
   function updateRule(idx: number, priceInPaise: number) {
     setRules((prev) =>
@@ -183,10 +226,10 @@ export default function StreamerPage() {
     }
     setCreating(true);
     try {
-      const info = await streaming.createIngest();
+  const info = await streaming.createIngest();
   setStreamKey(info.key);
   if (info.id) setStreamId(info.id);
-      setHlsUrl(info.hlsUrl || streaming.hlsFor(info.key));
+  setHlsUrl(info.hlsUrl || (info.id ? streaming.hlsFor(info.id) : streaming.hlsFor(info.key)));
     } catch (e: unknown) {
       const isErr = (val: unknown): val is { message?: string } => typeof val === 'object' && val !== null;
       const msg = isErr(e) && typeof (e as { message?: string }).message === 'string' ? e.message! : 'Failed to create ingest';
@@ -196,7 +239,8 @@ export default function StreamerPage() {
     }
   }
 
-  const overlayUrl = useMemo(() => (streamKey ? `/watch/${encodeURIComponent(streamKey)}` : ""), [streamKey]);
+  // Overlay link must use streamId, not streamKey
+  const overlayUrl = useMemo(() => (streamId ? `/watch/${encodeURIComponent(streamId)}` : ""), [streamId]);
 
   // Camera/screen preview controls
   async function startCamera() {
@@ -270,13 +314,12 @@ export default function StreamerPage() {
             </Button>
             <Button
               variant={status === 'LIVE' ? 'destructive' : 'default'}
-              disabled={!streamKey}
+        disabled={!streamId}
               onClick={async () => {
                 try {
                   const headers = await getAuthHeaders();
                   const path = status === 'LIVE' ? 'stop' : 'start';
-                  const idOrKey = streamId || streamKey;
-                  const r = await fetch(`/api/stream/${encodeURIComponent(String(idOrKey))}/${path}`, { method: 'POST', headers, credentials: 'include' });
+          const r = await fetch(`/api/stream/${encodeURIComponent(String(streamId))}/${path}`, { method: 'POST', headers, credentials: 'include' });
                   if (r.ok) {
                     const j = await r.json();
                     if (j?.status) setStatus(j.status);
@@ -353,11 +396,11 @@ export default function StreamerPage() {
             if (!t) return;
             setText("");
             try {
-              if (!streamKey) return;
+              if (!streamId) return;
               const token = JSON.parse(localStorage.getItem('streamfi-auth') || '{}').state?.session?.token;
               const csrfRes = await fetch(`/api/csrf`, { credentials: 'include' });
               const csrfToken = csrfRes.ok ? (await csrfRes.json()).csrfToken as string : undefined;
-              const res = await fetch(`/api/chat/${encodeURIComponent(String(streamKey))}/messages`, {
+              const res = await fetch(`/api/chat/${encodeURIComponent(String(streamId))}/messages`, {
                 method: 'POST', credentials: 'include',
                 headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) },
                 body: JSON.stringify({ text: t }),

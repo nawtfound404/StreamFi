@@ -76,24 +76,32 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const signOut = useAuthStore((s) => s.signOut)
   const user = session ? { name: session.userId, email: `${session.userId}@streamfi`, avatar: "https://github.com/shadcn.png" } : data.user
   const role = (session?.role || null) as Role;
-  // Filter nav based on role
+  const canStream = role === 'STREAMER' || role === 'streamer' || role === 'ADMIN' || role === 'admin'
+  // Filter nav based on role (but keep "My Stream" visible in the menu; route access is still gated)
   const nav = data.navMain.filter((item) => {
     if (item.title === 'Admin') return role === 'ADMIN' || role === 'admin';
     if (item.title === 'Streams') return true; // both can see
     if (item.title === 'Dashboard' || item.title === 'Notifications' || item.title === 'Settings') return true;
-    if (item.title === 'Monetization') return role === 'STREAMER' || role === 'streamer' || role === 'ADMIN' || role === 'admin';
+    if (item.title === 'Monetization') return canStream;
     return true;
   }).map((item) => {
     if (item.title === 'Streams') {
-      const filtered = { ...item } as typeof item;
-      filtered.items = (item.items || []).filter((sub) => {
-        if (sub.title === 'My Stream') return role === 'STREAMER' || role === 'streamer' || role === 'ADMIN' || role === 'admin';
-        return true;
-      });
+      const filtered = { ...item, isActive: canStream } as typeof item & { isActive?: boolean };
+      // Always show "My Stream" in the menu; non-streamers will be redirected by AuthGate if they click it
+      filtered.items = item.items || [];
       return filtered;
     }
     return item;
   });
+
+  // Ensure a prominent top-level "My Stream" entry for eligible users
+  if (/* also surface as top-level for convenience when eligible */ canStream && !nav.some((i) => i.url === '/streamer')) {
+    // Insert after Home if present, otherwise append
+    const homeIndex = nav.findIndex((i) => i.title === 'Home')
+    const myStreamItem = { title: 'My Stream', url: '/streamer', icon: Tv, items: [] as any[] }
+    if (homeIndex >= 0) nav.splice(homeIndex + 1, 0, myStreamItem)
+    else nav.push(myStreamItem)
+  }
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
