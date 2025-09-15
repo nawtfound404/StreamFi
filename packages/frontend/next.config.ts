@@ -11,8 +11,10 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   async rewrites() {
-  // Use Docker network host for backend within compose. For local non-Docker dev, adjust as needed.
-  const backend = 'http://backend:8000';
+  // In Docker, use service hostname; in local dev, you can set NEXT_PUBLIC_API_BASE to http://localhost:8000/api
+  const backend = process.env.NEXT_PUBLIC_API_BASE?.startsWith('http://localhost:8000')
+      ? 'http://localhost:8000'
+      : 'http://backend:8000';
     return [
       { source: '/api/:path*', destination: `${backend}/api/:path*` },
       { source: '/socket.io/:path*', destination: `${backend}/socket.io/:path*` },

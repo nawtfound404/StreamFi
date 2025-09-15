@@ -3,36 +3,59 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { connectWallet, getAccounts } from "@/lib/wallet";
-import { blockchain } from "@/modules/blockchain";
 import { io, Socket } from "socket.io-client";
 import Hls from "hls.js";
 import { hlsUrlFor } from "@/lib/config";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { users } from "@/modules/users";
 import { useAuthStore } from "@/stores/auth-store";
+import { channels, channelTypedData } from '@/modules/channels';
 
 export default function WatchPage() {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { sessionId: streamId } = useParams<{ sessionId: string }>();
   const session = useAuthStore((s) => s.session);
   const [address, setAddress] = useState<string | null>(null);
-  const [credits, setCredits] = useState<number>(0);
-  const [buyAmt, setBuyAmt] = useState<number>(1000);
+  // Credits (fiat) removed; we use ETH channel deposits instead
   const [log, setLog] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [reactionPrices, setReactionPrices] = useState<Record<string, number>>({ like: 100, haha: 200, wow: 500 });
+  const [reactionPrices, setReactionPrices] = useState<Record<string, number>>({ like: 1, haha: 1, wow: 1 });
   const [chat, setChat] = useState<Array<{ id: string; user: string; text: string; at: number }>>([]);
   const [text, setText] = useState("");
   // Lightweight animation overlays
   const [bursts, setBursts] = useState<Array<{ id: number; label: string }>>([]);
   const [chatFx, setChatFx] = useState<Array<{ id: number; text: string }>>([]);
+  const [channelId, setChannelId] = useState<string | null>(null);
+  const [channelNonce, setChannelNonce] = useState<number>(0);
+  const [channelSpentWei, setChannelSpentWei] = useState<string>('0');
+  const [channelDepositWei, setChannelDepositWei] = useState<string>('0');
+  const [channelStatus, setChannelStatus] = useState<'OPEN'|'CLOSING'|'CLOSED'|null>(null);
+  const [closing, setClosing] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [requiredChainId, setRequiredChainId] = useState<number | null>(null);
+  const [wrongNetwork, setWrongNetwork] = useState<boolean>(false);
+  const [tipEth, setTipEth] = useState<string>('0.000001');
+  const [vaultId, setVaultId] = useState<string>('0');
+  const [channelContract, setChannelContract] = useState<string>('0x0000000000000000000000000000000000000000');
+  const [minDepositWei, setMinDepositWei] = useState<string>('100000000000000');
+  const [minTipWei, setMinTipWei] = useState<string>('100000000000');
+  const minTipOk = ((): boolean => {
+    try { return BigInt(channelSpentWei) >= BigInt(0); } catch { return true; }
+  })();
+  // Track if we've attempted auto-open to avoid loops
+  const triedAutoOpenRef = useRef(false);
 
   useEffect(() => {
     getAccounts().then((a) => setAddress(a[0] ?? null)).catch(() => {});
+  // keep address in sync with wallet
+  const eth = (typeof window !== 'undefined' ? (window as any).ethereum : undefined);
+  const onAcc = (accs: string[]) => setAddress((accs && accs[0]) ? accs[0] : null);
+  if (eth?.on) eth.on('accountsChanged', onAcc);
+  return () => { if (eth?.removeListener) eth.removeListener('accountsChanged', onAcc); };
   }, []);
 
   useEffect(() => {
@@ -40,15 +63,15 @@ export default function WatchPage() {
     let joined = false;
     (async () => {
       try {
-        if (session?.token) {
-          await users.joinStream(String(sessionId));
+        if (session?.token && streamId) {
+          await users.joinStream(String(streamId));
           joined = true;
         }
       } catch {}
     })();
 
     // HLS playback via backend redirect (id or key supported)
-    const hlsUrl = hlsUrlFor(String(sessionId));
+  const hlsUrl = hlsUrlFor(String(streamId ?? ''));
     if (videoRef.current) {
       if (Hls.isSupported()) {
         const hls = new Hls({ maxBufferLength: 30 });
@@ -67,7 +90,7 @@ export default function WatchPage() {
       // Always connect via frontend origin; Next.js rewrites proxy to backend
       const wsUrl = window.location.origin.replace(/^http/, "ws");
       const token = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("streamfi-auth") || "{}").state?.session?.token : undefined;
-      const socket = io(wsUrl, { transports: ["websocket"], query: { streamId: String(sessionId) }, auth: { token } });
+  const socket = io(wsUrl, { transports: ["websocket"], query: { streamId: String(streamId ?? '') }, auth: { token } });
       socketRef.current = socket;
       socket.on("connect", () => setLog((l) => ["[ws] connected", ...l]));
       socket.on("disconnect", () => setLog((l) => ["[ws] disconnected", ...l]));
@@ -85,6 +108,15 @@ export default function WatchPage() {
           ...l
         ]);
       });
+      socket.on("stream_status", (p: { status: string }) => {
+        if (p?.status === 'LIVE') {
+          // Attempt auto-open when stream goes live
+          if (!triedAutoOpenRef.current && address && !channelId && !wrongNetwork) {
+            triedAutoOpenRef.current = true;
+            openChannelUI();
+          }
+        }
+      });
       socket.on("reaction_denied", () => {
         setLog((l) => ["Reaction denied (insufficient balance)", ...l]);
       });
@@ -94,76 +126,109 @@ export default function WatchPage() {
         setChatFx((fx) => [...fx, { id, text: m.text }]);
         setTimeout(() => setChatFx((fx) => fx.filter((x) => x.id !== id)), 1000);
       });
+      socket.on("superchat", (evt: any) => {
+        setLog((l) => [
+          `Superchat: +${evt.tipAmountEth ?? (Number(evt.tipWei)/1e18).toFixed(6)} ETH (tier ${evt.tier})`,
+          ...l
+        ]);
+        setChannelNonce(evt.nonce);
+        setChannelSpentWei(String(evt.cumulativeWei));
+        setChat((c) => [...c, { id: `sc-${evt.nonce}`, user: evt.viewerAddress, text: evt.message || '', at: Date.now() }]);
+      });
     } catch {}
     return () => {
       socketRef.current?.disconnect();
-      if (joined) users.leaveStream(String(sessionId)).catch(() => {});
+      if (joined && streamId) users.leaveStream(String(streamId)).catch(() => {});
     };
-  }, [sessionId, session?.token]);
+  }, [streamId, session?.token]);
 
   useEffect(() => {
-    // Load streamer-configured reactions/prices for this stream (public)
+    // Load streamer-configured reactions (labels). We ignore fiat prices; tips are in ETH.
     (async () => {
       try {
-        const items = await api<Array<{ key: string; priceInPaise: number }>>(`/api/reactions/by-stream/${encodeURIComponent(String(sessionId))}`);
+        if (!streamId) return;
+        const items = await api<Array<{ key: string; label?: string; priceInPaise?: number }>>(`/api/reactions/by-stream/${encodeURIComponent(String(streamId))}`);
         const map: Record<string, number> = {};
-        for (const it of items) map[it.key] = Number(it.priceInPaise || 0);
+        for (const it of items) map[it.key] = 1; // presence only; value unused
         if (Object.keys(map).length) setReactionPrices(map);
       } catch {}
     })();
-  }, [sessionId]);
+  }, [streamId]);
 
   useEffect(() => {
     // fetch initial chat history
     (async () => {
       try {
+        if (!streamId) return;
         const r = await api<{ items: Array<{ _id: string; userId: string; text: string; createdAt: string }> }>(
-          `/api/chat/${encodeURIComponent(String(sessionId))}/messages`
+          `/api/chat/${encodeURIComponent(String(streamId))}/messages`
         );
         setChat(
           (r.items || []).map((i) => ({ id: i._id, user: i.userId, text: i.text, at: new Date(i.createdAt).getTime() }))
         );
       } catch {}
     })();
-  }, [sessionId]);
+  }, [streamId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!streamId) return;
+        const init = await channels.init(String(streamId));
+        if (cancelled) return;
+        if (init?.vaultId) setVaultId(String(init.vaultId));
+        if (init?.channelContract) setChannelContract(init.channelContract);
+        if (init?.minDepositWei) setMinDepositWei(String(init.minDepositWei));
+        if (init?.minTipWei) setMinTipWei(String(init.minTipWei));
+        if (init?.chainId) setRequiredChainId(Number(init.chainId));
+      } catch (e:any) {
+        if (!cancelled) setLog((l)=>[`Overlay channel init failed: ${e?.message || e}`, ...l]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [streamId]);
+
+  // Check wallet network vs required chain id
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!requiredChainId) return;
+        const eth = (typeof window !== 'undefined' ? (window as any).ethereum : undefined);
+        if (!eth) return;
+        const hex = await eth.request({ method: 'eth_chainId' });
+        const current = typeof hex === 'string' && hex.startsWith('0x') ? parseInt(hex, 16) : Number(hex);
+        setWrongNetwork(current !== requiredChainId);
+      } catch {}
+    })();
+  }, [requiredChainId, address]);
+
+  // Auto-open as soon as wallet is connected and prerequisites are present
+  useEffect(() => {
+    if (!address || wrongNetwork || channelId || opening) return;
+    if (!requiredChainId || !minDepositWei) return;
+    if (triedAutoOpenRef.current) return;
+    triedAutoOpenRef.current = true;
+    openChannelUI();
+  }, [address, wrongNetwork, channelId, opening, requiredChainId, minDepositWei]);
 
   async function onConnect() {
     const acc = await connectWallet();
     setAddress(acc);
   }
 
-  async function buyCredits() {
-    if (!address) return;
-    setLoading(true);
+  // Reaction -> send a minimal ETH tip using the channel. We use minTipWei by default.
+  async function reactOnce(kind: string) {
     try {
-      await blockchain.deposit(String(sessionId), buyAmt, "INR");
-      setCredits((c) => c + buyAmt);
-      setLog((l) => [`Deposited ₹${(buyAmt / 100).toFixed(2)}`, ...l]);
-    } catch {
-      setCredits((c) => c + buyAmt);
-      setLog((l) => [`[SIM] Deposited ₹${(buyAmt / 100).toFixed(2)}`, ...l]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function reactOnce(kind: string, price: number) {
-    if (!address) return;
-    if (credits < price) {
-      setLog((l) => ["Insufficient credits", ...l]);
-      return;
-    }
-    setLoading(true);
-    try {
-      socketRef.current?.emit("reaction", { streamId: String(sessionId), type: kind });
-      setCredits((c) => c - price);
-      setLog((l) => [`Reacted: ${kind} (-₹${(price / 100).toFixed(2)})`, ...l]);
-    } catch {
-      setCredits((c) => c - price);
-      setLog((l) => [`[SIM] Reacted: ${kind} (-₹${(price / 100).toFixed(2)})`, ...l]);
-    } finally {
-      setLoading(false);
-    }
+      // visual fx
+      const id = Date.now();
+      setBursts((b) => [...b, { id, label: kind.toUpperCase() }]);
+      setTimeout(() => setBursts((b) => b.filter((x) => x.id !== id)), 1000);
+      // tip using minTipWei
+      const addWei = BigInt(minTipWei || '0');
+  if (addWei <= BigInt(0) || !channelId) return;
+  await sendTipAmount(addWei, `reaction:${kind}`);
+    } catch {}
   }
 
   async function sendChat() {
@@ -172,9 +237,9 @@ export default function WatchPage() {
     setText("");
     try {
       const token = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("streamfi-auth") || "{}").state?.session?.token : undefined;
-      const csrfRes = await fetch(`/api/csrf`, { credentials: "include" });
+  const csrfRes = await fetch(`${API_BASE}/csrf`, { credentials: "include" });
       const csrfToken = csrfRes.ok ? (await csrfRes.json()).csrfToken as string : undefined;
-      const res = await fetch(`/api/chat/${encodeURIComponent(String(sessionId))}/messages`, {
+  const res = await fetch(`${API_BASE}/chat/${encodeURIComponent(String(streamId ?? ''))}/messages`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken ? { "x-csrf-token": csrfToken } : {}) },
@@ -188,12 +253,79 @@ export default function WatchPage() {
     }
   }
 
+  async function openChannelUI() {
+    if (!address) return;
+    try {
+      setOpening(true);
+      const minDeposit = minDepositWei; // dynamic
+      const deposit = minDeposit; // static for MVP
+  const resp = await channels.open(String(streamId ?? ''), BigInt(deposit));
+      setChannelId(resp.channelId);
+      setChannelDepositWei(deposit);
+  setChannelStatus('OPEN');
+      setLog((l)=>[`Channel opened id=${resp.channelId}`, ...l]);
+      // Fetch channel details to populate nonce/spent/vault/status
+      try {
+        const ch = await channels.get(resp.channelId);
+        if (ch?.nonce !== undefined) setChannelNonce(Number(ch.nonce));
+        if (ch?.spentWei !== undefined) setChannelSpentWei(String(ch.spentWei || '0'));
+        if (ch?.depositWei !== undefined) setChannelDepositWei(String(ch.depositWei));
+        if (ch?.streamerVaultId !== undefined) setVaultId(String(ch.streamerVaultId));
+        if (ch?.status) setChannelStatus(ch.status);
+      } catch {}
+    } catch (e:any) {
+      setLog((l)=>[`Channel open failed: ${e.message}`, ...l]);
+    } finally { setOpening(false); }
+  }
+
+  // Low-level tip function using explicit wei amount
+  async function sendTipAmount(addWei: bigint, msgOverride?: string) {
+    if (!address || !channelId) return;
+    try {
+      const provider = (window as any).ethereum;
+      const newSpent = (BigInt(channelSpentWei) + addWei).toString();
+      const nextNonce = channelNonce + 1;
+  const domain = { name: 'StreamFiChannel', version: '1', chainId: Number(requiredChainId || 11155111), verifyingContract: channelContract };
+      const state = { channelId, vaultId: Number(vaultId), viewer: address, deposit: channelDepositWei, spent: newSpent, nonce: nextNonce } as any;
+      const typed = channelTypedData(domain, state);
+      const signature = await provider.request({ method: 'eth_signTypedData_v4', params: [address, typed] });
+      const resp = await channels.tip({ channelId, newSpentWei: BigInt(newSpent), nonce: nextNonce, signature, message: (msgOverride ?? text) || undefined });
+      setChannelSpentWei(newSpent);
+      setChannelNonce(resp.nonce);
+      setText('');
+    } catch (e:any) {
+      setLog((l)=>[`Tip failed: ${e.message}`, ...l]);
+    }
+  }
+
+  async function sendTip() {
+    const amt = BigInt(Math.floor(parseFloat(tipEth || '0') * 1e18));
+    return sendTipAmount(amt);
+  }
+
+  async function closeChannel() {
+    if (!channelId) return;
+    if (closing || channelStatus === 'CLOSED') return;
+    try {
+      setClosing(true);
+      setChannelStatus('CLOSING');
+      const r = await channels.close(channelId);
+      setChannelStatus('CLOSED');
+      const parts = [`Channel closed deposited=${r.deposited}`];
+      if (r.settlementTx) parts.push(`tx=${r.settlementTx}`);
+      if (r.skippedOnchain) parts.push('(skipped on-chain)');
+      if (r.alreadyClosed) parts.push('(already closed)');
+      setLog((l)=>[parts.join(' '), ...l]);
+    } catch (e:any) { setLog((l)=>[`Channel close failed: ${e.message}`, ...l]); }
+    finally { setClosing(false); }
+  }
+
   return (
     <main className="p-4 space-y-4">
       <h1 className="text-xl font-semibold">Stream Overlay</h1>
       <Card>
         <CardContent className="p-3 flex items-center gap-2">
-          <strong>Session:</strong> <code className="ml-2">{String(sessionId)}</code>
+          <strong>Stream:</strong> <code className="ml-2">{String(streamId)}</code>
           <span className="ml-auto flex items-center">
             <strong>Wallet:</strong> <code className="ml-2">{address ?? "Not connected"}</code>
             <Button variant="outline" className="ml-2" onClick={onConnect}>
@@ -204,70 +336,44 @@ export default function WatchPage() {
       </Card>
 
       <Card>
-            <CardContent className="p-0 relative overflow-hidden">
-              <video ref={videoRef} className="w-full aspect-[16/9] rounded-xl" controls playsInline />
-              {/* Reaction bursts */}
-              <div className="pointer-events-none absolute inset-0 flex items-end justify-center">
-                <div className="relative w-full h-0">
-                  {bursts.map((b) => (
-                    <span
-                      key={b.id}
-                      className="absolute left-1/2 -translate-x-1/2 mb-6 select-none text-2xl font-bold animate-bounce text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)]"
-                    >
-                      {b.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              {/* Chat float-ups */}
-              <div className="pointer-events-none absolute inset-0">
-                {chatFx.map((c) => (
-                  <div
-                    key={c.id}
-                    className="absolute bottom-6 left-6 text-white/90 text-sm bg-black/30 rounded px-2 py-1 animate-fade-up"
-                  >
-                    {c.text}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
+        <CardContent className="p-0 relative overflow-hidden">
+          <video ref={videoRef} className="w-full aspect-[16/9] rounded-xl" controls playsInline />
+          {/* Reaction bursts */}
+          <div className="pointer-events-none absolute inset-0 flex items-end justify-center">
+            <div className="relative w-full h-0">
+              {bursts.map((b) => (
+                <span
+                  key={b.id}
+                  className="absolute left-1/2 -translate-x-1/2 mb-6 select-none text-2xl font-bold animate-bounce text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)]"
+                >
+                  {b.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
-  <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Credits</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>Balance: ₹{(credits / 100).toFixed(2)}</p>
-            <div className="flex items-center gap-2 mt-2">
-              <Input
-                type="number"
-                min={100}
-                step={100}
-                value={buyAmt}
-                aria-label="Top-up amount in paise"
-                placeholder="Amount in paise"
-                onChange={(e) => setBuyAmt(Number(e.target.value))}
-                className="w-40"
-              />
-              <Button variant="outline" onClick={buyCredits} disabled={loading || !address}>Buy Credits</Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Amounts in paise (₹100 = ₹1.00)</p>
-          </CardContent>
-        </Card>
-
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Reactions</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {Object.entries(reactionPrices).map(([k, v]) => (
-                <Button key={k} variant="outline" onClick={() => reactOnce(k, v)} disabled={loading || !address}>
-                  {k} (₹{(v / 100).toFixed(2)})
+              {Object.entries(reactionPrices).map(([k]) => (
+                <Button
+                  key={k}
+                  variant="outline"
+                  onClick={() => reactOnce(k)}
+                  disabled={loading || !address || !channelId || channelStatus !== 'OPEN'}
+                >
+                  {k} (+min tip)
                 </Button>
               ))}
+            </div>
+            <div className="text-xs text-muted-foreground mt-2">
+              Each reaction sends a minimal ETH tip via your open channel.
             </div>
           </CardContent>
         </Card>
@@ -280,25 +386,54 @@ export default function WatchPage() {
             <pre className="max-h-52 overflow-auto whitespace-pre-wrap">{log.join("\n")}</pre>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Chat</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-64 overflow-auto space-y-1 mb-2">
+              {chat.map((m) => (
+                <div key={m.id} className="text-sm">
+                  <span className="text-muted-foreground mr-2">{m.user.slice(0, 6)}:</span>
+                  <span>{m.text}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Say something" />
+              <Button onClick={sendChat} disabled={!session}>Send</Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Chat</CardTitle>
+          <CardTitle>Channel (Off-chain Micro)</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="max-h-64 overflow-auto space-y-1 mb-2">
-            {chat.map((m) => (
-              <div key={m.id} className="text-sm">
-                <span className="text-muted-foreground mr-2">{m.user.slice(0, 6)}:</span>
-                <span>{m.text}</span>
+          {channelId ? (
+            <div className="space-y-2">
+              <p className="text-xs break-all">ID: {channelId}</p>
+              <p className="text-xs">Vault: {vaultId}</p>
+              <p className="text-xs">Status: {channelStatus ?? '—'}</p>
+              <p className="text-xs">Spent: {(Number(channelSpentWei)/1e18).toFixed(6)} / {(Number(channelDepositWei)/1e18).toFixed(6)} ETH</p>
+              <div className="flex gap-2 items-center">
+                <Input value={tipEth} onChange={e=>setTipEth(e.target.value)} className="w-28" />
+                <Button size="sm" onClick={sendTip} disabled={!address || wrongNetwork || channelStatus !== 'OPEN' || (BigInt(Math.floor(parseFloat(tipEth||'0')*1e18)) < BigInt(minTipWei))}>Send Tip</Button>
+                <Button size="sm" variant="outline" onClick={closeChannel} disabled={closing || channelStatus === 'CLOSED'}>{closing ? 'Closing…' : 'Close'}</Button>
               </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Say something" />
-            <Button onClick={sendChat} disabled={!session}>Send</Button>
-          </div>
+              <p className="text-[10px] text-muted-foreground">Min Tip {Number(minTipWei)/1e18} ETH</p>
+              {wrongNetwork && <p className="text-[10px] text-red-500">Wrong network. Please switch to chain ID {requiredChainId}.</p>}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Button size="sm" onClick={openChannelUI} disabled={!address || opening || wrongNetwork}>{opening ? 'Opening…' : 'Open Channel'}</Button>
+              <p className="text-[10px] text-muted-foreground">Min Deposit {Number(minDepositWei)/1e18} ETH</p>
+              {wrongNetwork && <p className="text-[10px] text-red-500">Wrong network. Please switch to chain ID {requiredChainId}.</p>}
+            </div>
+          )}
         </CardContent>
       </Card>
     </main>

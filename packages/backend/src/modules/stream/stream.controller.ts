@@ -4,6 +4,9 @@ import { env } from '../../config/environment';
 import crypto from 'crypto';
 import { Types } from 'mongoose';
 import { getRoomSize, emitToStreamRooms } from '../../lib/socket';
+import { ChannelModel } from '../../lib/mongo';
+import { closeChannelCooperative } from '../../services/channel.service';
+import { yellowService } from '../../services/yellow.service';
 
 export const getIngest = async (req: Request, res: Response) => {
 	// Issue or reuse a stream key for the authenticated streamer
@@ -108,7 +111,29 @@ export const stopStream = async (req: Request, res: Response) => {
 		streamDoc.set({ status: 'IDLE', endedAt: new Date() });
 		await streamDoc.save();
 		emitToStreamRooms({ id: String((streamDoc as any)._id), key: (streamDoc as any).streamKey }, 'stream_status', { status: 'IDLE' });
-		return res.json({ ok: true, status: 'IDLE' });
+
+		// Auto-close all channels for this stream (settle microtransactions to creator vault)
+		try {
+			const sid = String((streamDoc as any)._id);
+			const openChannels = await ChannelModel.find({ streamId: sid, status: { $in: ['OPEN', 'CLOSING'] } }).lean();
+			let closed = 0;
+			for (const ch of openChannels) {
+				try {
+					// Cooperative close (includes deposit to vault and marks CLOSED)
+					await closeChannelCooperative((ch as any).channelId);
+					closed++;
+					// If the channel was opened on-chain (openTxHash present), attempt on-chain close as well
+					if ((ch as any).openTxHash) {
+						const spent = BigInt((ch as any).spentWei || '0');
+						try { await yellowService.closeChannel((ch as any).channelId, spent); } catch { /* non-fatal in stop */ }
+					}
+				} catch { /* continue with next channel */ }
+			}
+			return res.json({ ok: true, status: 'IDLE', channelsClosed: closed });
+		} catch {
+			// If settlement fails, still return success for stopping stream
+			return res.json({ ok: true, status: 'IDLE', channelsClosed: 0 });
+		}
 	} catch {
 		return res.status(500).json({ message: 'Failed to stop stream' });
 	}

@@ -131,9 +131,34 @@ class YellowService {
         return rc.transactionHash;
     }
     async adjudicate(state, signature) {
-        const tx = await this.adjudicator.adjudicate(state, signature, state.viewer);
-        const rc = await tx.wait(1);
-        return rc.transactionHash;
+        // Dev fallback when contracts aren’t ready or RPC not available
+        if (!this.ready && process.env.NODE_ENV !== 'production') {
+            const mock = ethers_1.ethers.keccak256(ethers_1.ethers.toUtf8Bytes(`mock-adjudicate:${JSON.stringify(state)}:${signature}:${Date.now()}`));
+            logger_1.logger.warn({ tx: mock }, 'Dev mode: adjudicate fallback (contracts not ready)');
+            return mock;
+        }
+        try {
+            // Coerce potential string inputs to bigint for contract call
+            const normalized = {
+                channelId: state.channelId,
+                vaultId: BigInt(state.vaultId),
+                viewer: state.viewer,
+                deposit: BigInt(state.deposit),
+                spent: BigInt(state.spent),
+                nonce: BigInt(state.nonce),
+            };
+            const tx = await this.adjudicator.adjudicate(normalized, signature, state.viewer);
+            const rc = await tx.wait(1);
+            return rc.transactionHash;
+        }
+        catch (e) {
+            if (process.env.NODE_ENV !== 'production') {
+                const mock = ethers_1.ethers.keccak256(ethers_1.ethers.toUtf8Bytes(`mock-adjudicate-error:${JSON.stringify(state)}:${signature}:${Date.now()}`));
+                logger_1.logger.warn({ err: e?.message, tx: mock }, 'Dev mode: adjudicate failed; returning mock tx');
+                return mock;
+            }
+            throw e;
+        }
     }
 }
 exports.yellowService = new YellowService();

@@ -48,7 +48,11 @@ docker-compose.yml
 
 ## Environment
 
-- Backend: copy `packages/backend/.env.example` → `packages/backend/.env` and fill required values (MONGO_URL, JWT_SECRET, JSON_RPC_PROVIDER, YELLOW_API_KEY…).
+- Backend: copy `packages/backend/.env.example` → `packages/backend/.env` and fill required values (DATABASE_URL, JWT_SECRET, JSON_RPC_PROVIDER). For on-chain channels on Sepolia also set:
+	- `CREATOR_VAULT_ADDRESS` (Nitrolite)
+	- `YELLOW_CHANNEL_CONTRACT` (ChannelManager)
+	- `CHANNEL_CHAIN_ID=11155111`
+	- Optional minimums: `MIN_CHANNEL_DEPOSIT_WEI`, `MIN_TIP_WEI`
 - Frontend: copy `packages/frontend/.env.example` → `packages/frontend/.env.local` (or `.env`) and set `NEXT_PUBLIC_API_BASE` to `http://localhost:8000/api`.
 
 ## Run (Docker Compose)
@@ -84,6 +88,37 @@ npm run dev
 - Donations (Stripe intent + webhooks, UPI/PayPal stubs), CSV export; payout requests
 - NFT indexer (backfill + subscribe) and metadata resolution (IPFS + optional pinning)
 - Metrics: `/health`, `/metrics` (Prometheus); correlation ID sampling logs
+
+### Off-Chain Microtransaction Channels (Yellow Prototype)
+
+MVP added for low-gas tipping via signed off-chain state updates:
+
+Endpoints
+```
+GET    /api/channels/stream/:streamId/init           # Fetch vault + limits
+POST   /api/channels/open                            # Open per-viewer channel
+POST   /api/channels/:channelId/tip                  # EIP-712 signed tip update
+POST   /api/channels/:channelId/close                # Cooperative close & vault deposit
+GET    /api/channels/stream/:streamId/summary        # Aggregate revenue
+```
+
+Environment (backend)
+```
+YELLOW_CHANNEL_CONTRACT=0xYourChannelContract
+CHANNEL_CHAIN_ID=11155111
+MIN_CHANNEL_DEPOSIT_WEI=100000000000000        # 0.0001 ETH
+MIN_TIP_WEI=100000000000                       # 0.0000001 ETH
+```
+
+Flow
+1. Viewer connects wallet on watch page.
+2. Init fetch provides vaultId + limits.
+3. Viewer opens channel (sets deposit offline placeholder).
+4. Each tip: viewer signs ChannelState (channelId, vaultId, deposit, spent, nonce).
+5. Backend verifies signature, updates spent, broadcasts `superchat`.
+6. Close: backend deposits cumulative spent into Nitrolite vault.
+
+Rate limiting: basic in-memory limiter (15 tips / 5s per viewer/channel) — replace with Redis for production.
 
 ## Payments (Stripe)
 

@@ -21,7 +21,7 @@ export default function Page() {
   const s = await monetization.getSummary()
       const m = await analytics.getLiveMetrics()
   const d = await monetization.getDonations()
-      setKpi({ donations: s.totalDonationsUSD, nfts: s.totalNftSales, pending: s.payoutsPendingUSD })
+  setKpi({ donations: Number(s.totalDonationsUSD||0), nfts: Number(s.totalNftSales||0), pending: Number(s.payoutsPendingUSD||0) })
       setSeries(m)
   setRecent(d.slice(0,5))
     })()

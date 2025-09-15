@@ -118,18 +118,33 @@ class YellowService {
   }
 
   async adjudicate(state: { channelId: string; vaultId: bigint|string; viewer: string; deposit: bigint|string; spent: bigint|string; nonce: bigint|string }, signature: string): Promise<string> {
-    // Coerce potential string inputs to bigint for contract call
-    const normalized = {
-      channelId: state.channelId,
-      vaultId: BigInt(state.vaultId as any),
-      viewer: state.viewer,
-      deposit: BigInt(state.deposit as any),
-      spent: BigInt(state.spent as any),
-      nonce: BigInt(state.nonce as any),
-    } as any;
-    const tx = await (this.adjudicator as any).adjudicate(normalized, signature, state.viewer);
-    const rc = await tx.wait(1);
-    return rc.transactionHash;
+    // Dev fallback when contracts aren’t ready or RPC not available
+    if (!this.ready && process.env.NODE_ENV !== 'production') {
+      const mock = ethers.keccak256(ethers.toUtf8Bytes(`mock-adjudicate:${JSON.stringify(state)}:${signature}:${Date.now()}`));
+      logger.warn({ tx: mock }, 'Dev mode: adjudicate fallback (contracts not ready)');
+      return mock;
+    }
+    try {
+      // Coerce potential string inputs to bigint for contract call
+      const normalized = {
+        channelId: state.channelId,
+        vaultId: BigInt(state.vaultId as any),
+        viewer: state.viewer,
+        deposit: BigInt(state.deposit as any),
+        spent: BigInt(state.spent as any),
+        nonce: BigInt(state.nonce as any),
+      } as any;
+      const tx = await (this.adjudicator as any).adjudicate(normalized, signature, state.viewer);
+      const rc = await tx.wait(1);
+      return rc.transactionHash;
+    } catch (e) {
+      if (process.env.NODE_ENV !== 'production') {
+        const mock = ethers.keccak256(ethers.toUtf8Bytes(`mock-adjudicate-error:${JSON.stringify(state)}:${signature}:${Date.now()}`));
+        logger.warn({ err: (e as any)?.message, tx: mock }, 'Dev mode: adjudicate failed; returning mock tx');
+        return mock;
+      }
+      throw e;
+    }
   }
 }
 

@@ -1,13 +1,73 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../middlewares/auth.middleware';
+import mongoose from 'mongoose';
 import { openChannel, verifyAndApplyTip, closeChannelCooperative } from '../../services/channel.service';
 import { yellowService } from '../../services/yellow.service';
 import { env } from '../../config/environment';
 import { emitToStream } from '../../lib/socket';
 import { ChannelModel, connectMongo } from '../../lib/mongo';
+import { blockchainService } from '../../services/blockchain.service';
 import { ethers } from 'ethers';
 
 const router = Router();
+
+// PUBLIC: Lightweight stream/channel config for viewers.
+// Accepts either the Mongo _id or the public streamKey.
+// Does NOT require authentication so that anonymous viewers can load the watch page.
+router.get('/stream/:streamId/init', async (req, res) => {
+  try {
+    const maybeUser = (req as any).user; // may be undefined when not authenticated
+    await connectMongo();
+    const { StreamModel, UserModel } = await import('../../lib/mongo.js');
+    const sid = req.params.streamId;
+    // Handle 24-hex streamKey vs ObjectId collision: try byId first, then fall back to streamKey when not found
+    let stream: any = null;
+    if (mongoose.Types.ObjectId.isValid(sid)) {
+      stream = await StreamModel.findById(sid).lean();
+      if (!stream) {
+        stream = await StreamModel.findOne({ streamKey: sid }).lean();
+      }
+    } else {
+      stream = await StreamModel.findOne({ streamKey: sid }).lean();
+    }
+    if (!stream) return res.status(404).json({ message: 'stream not found' });
+    let streamer: any = await UserModel.findById((stream as any).streamerId).lean();
+    let vaultId = (streamer as any)?.vaultId ?? null;
+    // Auto-discover and attach vault in dev if missing but wallet is set
+    if (!vaultId && (streamer as any)?.walletAddress) {
+      try {
+        const owned = await blockchainService.getTokensByOwner((streamer as any).walletAddress);
+        if (owned && owned.length > 0) {
+          vaultId = owned[0];
+          await UserModel.updateOne({ _id: (streamer as any)._id }, { $set: { vaultId: vaultId.toString() } });
+          streamer = await UserModel.findById((stream as any).streamerId).lean();
+        }
+      } catch {}
+    }
+    // Dev fallback: if still missing, synthesize a deterministic mock vault id to unblock local flows
+    if (!vaultId && process.env.NODE_ENV !== 'production') {
+      try {
+        const src = String((streamer as any)?.walletAddress || (stream as any)?._id || sid).toLowerCase();
+        const { ethers } = await import('ethers');
+        const h = ethers.keccak256(ethers.toUtf8Bytes(src));
+        const v = (BigInt(h) & ((1n << 56n) - 1n)).toString();
+        await UserModel.updateOne({ _id: (streamer as any)._id }, { $set: { vaultId: v } });
+        vaultId = v;
+      } catch {}
+    }
+    return res.json({
+      streamId: sid,
+      vaultId,
+      channelContract: env.yellow.channelContract,
+      chainId: env.yellow.chainId,
+      minDepositWei: env.yellow.minChannelDepositWei.toString?.() || String(env.yellow.minChannelDepositWei),
+      minTipWei: env.yellow.minTipWei.toString?.() || String(env.yellow.minTipWei),
+      viewerHasWallet: !!(maybeUser?.walletAddress),
+    });
+  } catch (e: any) { return res.status(500).json({ message: e.message }); }
+});
+
+// Everything else requires authentication
 router.use(authMiddleware);
 // DEV ONLY: force delete an existing channel to allow reopening with a different viewer
 if (process.env.NODE_ENV !== 'production') {
@@ -48,27 +108,7 @@ const tipRateLimiter = (() => {
   };
 })();
 
-// GET /channels/stream/:streamId/init -> vault/channel config (lightweight, public-ish but requires auth for viewer context)
-router.get('/stream/:streamId/init', async (req, res) => {
-  try {
-    const user = (req as any).user;
-    await connectMongo();
-  const { StreamModel, UserModel } = await import('../../lib/mongo.js');
-    const stream = await StreamModel.findById(req.params.streamId).lean();
-    if (!stream) return res.status(404).json({ message: 'stream not found' });
-    const streamer = await UserModel.findById((stream as any).streamerId).lean();
-    const vaultId = (streamer as any)?.vaultId ?? null;
-  return res.json({
-      streamId: req.params.streamId,
-      vaultId,
-      channelContract: env.yellow.channelContract,
-      chainId: env.yellow.chainId,
-      minDepositWei: env.yellow.minChannelDepositWei.toString?.() || String(env.yellow.minChannelDepositWei),
-      minTipWei: env.yellow.minTipWei.toString?.() || String(env.yellow.minTipWei),
-      viewerHasWallet: !!(user?.walletAddress),
-    });
-  } catch (e: any) { return res.status(500).json({ message: e.message }); }
-});
+// (moved above and made public)
 
 // POST /channels/open { streamId, depositWei }
 router.post('/open', async (req, res) => {
@@ -113,6 +153,13 @@ router.post('/open', async (req, res) => {
       try {
         const onchain = await yellowService.openChannel(viewer, streamId, vaultId, bn);
         txHash = onchain.txHash;
+        // Persist the open transaction hash so we know this channel exists on-chain
+        try {
+          await ChannelModel.updateOne(
+            { channelId: opened.channelId },
+            { $set: { openTxHash: txHash } }
+          );
+        } catch {}
       } catch (e) {
         // Non-fatal in dev: continue with off-chain channel even if on-chain open fails (e.g., insufficient admin funds)
         txHash = null;
@@ -184,10 +231,19 @@ router.post('/:id/close', async (req, res) => {
   // Also close on-chain channel settlement with spentWei
   const ch: any = await ChannelModel.findOne({ channelId: req.params.id }).lean();
   const spent = BigInt(ch?.spentWei || '0');
+  // If we never successfully opened on-chain (no openTxHash), skip on-chain close to avoid revert noise
+  if (!ch?.openTxHash || out?.alreadyClosed) {
+    return res.json({ ...out, settlementTx: ch?.closeTxHash || null, skippedOnchain: !ch?.openTxHash, alreadyClosed: !!out?.alreadyClosed });
+  }
   try {
     const onchain = await yellowService.closeChannel(req.params.id, spent);
     return res.json({ ...out, settlementTx: onchain.txHash });
   } catch (e: any) {
+    // If revert reason indicates it's already closed, treat as idempotent success
+    const msg = e?.message || '';
+    if (/closed/i.test(msg)) {
+      return res.json({ ...out, settlementTx: null, alreadyClosed: true, onchainError: msg });
+    }
     // Non-fatal in non-production environments: return cooperative close result even if on-chain close fails
     if (process.env.NODE_ENV !== 'production') {
       return res.json({ ...out, settlementTx: null, onchainError: e?.message || String(e) });

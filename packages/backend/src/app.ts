@@ -22,7 +22,7 @@ app.use(cors({ origin: (origin, cb) => {
 	if (!origin) return cb(null, true); // allow same-origin/non-browser
 	if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
 	return cb(new Error('Not allowed by CORS'));
-}, credentials: true }));
+}, credentials: true, methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization','x-csrf-token','x-viewer-address'] }));
 
 // Helmet with tighter defaults
 app.use(helmet({
@@ -69,7 +69,9 @@ app.use(responseTime((req: Request, res: Response, time: number) => {
 	httpRequestDurationMicroseconds.labels(req.method, route, String(res.statusCode)).observe(time);
 }));
 // CSRF setup with cookie-based secret so no server session is required
-const csrfProtection = csrf({ cookie: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' } });
+// Allow overriding cookie security via env for local Docker (HTTP) vs production (HTTPS)
+const CSRF_SECURE = (process.env.CSRF_SECURE ?? (process.env.NODE_ENV === 'production' ? 'true' : 'false')).toLowerCase() === 'true';
+const csrfProtection = csrf({ cookie: { httpOnly: true, sameSite: 'lax', secure: CSRF_SECURE } });
 const csrfBypassPaths = new Set([
 	'/api/auth/login',
 	'/api/auth/signup',
@@ -97,6 +99,10 @@ app.get('/api', (_req, res) => {
 		health: '/health',
 		examples: ['/api/auth/login', '/api/csrf'],
 	});
+});
+// Explicit API health endpoint for tooling
+app.get('/api/health', async (_req, res) => {
+	return res.status(200).json({ status: 'UP' });
 });
 // CSRF token issuance for browsers: returns a one-time token bound to the secret cookie
 app.get('/api/csrf', csrfProtection, (req: Request, res: Response) => {

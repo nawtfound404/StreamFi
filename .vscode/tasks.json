@@ -6,6 +6,18 @@
 			"type": "shell",
 			"command": "npm run --silent test",
 			"group": "build"
+		},
+		{
+			"label": "backend tests",
+			"type": "shell",
+			"command": "npm run --silent test",
+			"group": "build"
+		},
+		{
+			"label": "backend tests",
+			"type": "shell",
+			"command": "npm run --silent test",
+			"group": "build"
 		}
 	]
 }

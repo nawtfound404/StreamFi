@@ -44,7 +44,15 @@ class BlockchainService {
      * Creates a vault for a user on-chain.
      */
     async createVaultForUser(userWalletAddress) {
+        // Dev-friendly fallback when on-chain writes are not available
         if (!this.adminWallet) {
+            if (process.env.NODE_ENV !== 'production') {
+                // Derive a deterministic mock vault id from the wallet address (lower 56 bits of keccak)
+                const h = ethers_1.ethers.keccak256(ethers_1.ethers.toUtf8Bytes(userWalletAddress.toLowerCase()));
+                const v = BigInt(h) & ((1n << 56n) - 1n);
+                logger_1.logger.warn({ owner: userWalletAddress, vaultId: v.toString() }, 'Admin wallet not configured; returning mock vault id (dev mode)');
+                return v;
+            }
             throw new Error('Admin wallet is not configured. Set ADMIN_PRIVATE_KEY to enable on-chain writes.');
         }
         try {
@@ -68,6 +76,12 @@ class BlockchainService {
             throw new Error('VaultCreated event not found in transaction receipt.');
         }
         catch (error) {
+            if (process.env.NODE_ENV !== 'production') {
+                const h = ethers_1.ethers.keccak256(ethers_1.ethers.toUtf8Bytes(userWalletAddress.toLowerCase()));
+                const v = BigInt(h) & ((1n << 56n) - 1n);
+                logger_1.logger.warn({ err: error?.message, owner: userWalletAddress, vaultId: v.toString() }, 'On-chain vault creation failed; returning mock vault id (dev mode)');
+                return v;
+            }
             logger_1.logger.error({ err: error }, 'Failed to create on-chain vault');
             throw new Error('On-chain vault creation failed.');
         }
@@ -177,8 +191,14 @@ class BlockchainService {
     }
     /** Admin-funded deposit into a creator vault (Nitrolite deposit). */
     async depositToVault(vaultId, amountWei) {
-        if (!this.adminWallet)
+        if (!this.adminWallet) {
+            if (process.env.NODE_ENV !== 'production') {
+                const mock = ethers_1.ethers.keccak256(ethers_1.ethers.toUtf8Bytes(`mock-deposit:${vaultId}:${amountWei.toString()}:${Date.now()}`));
+                logger_1.logger.warn({ vaultId: vaultId.toString(), amountWei: amountWei.toString(), tx: mock }, 'Dev mode: skipping on-chain deposit, returning mock tx');
+                return mock;
+            }
             throw new Error('Admin wallet not configured');
+        }
         const id = BigInt(vaultId);
         const value = amountWei;
         logger_1.logger.info(`Depositing ${ethers_1.ethers.formatEther(value)} ETH into vault ${id.toString()}`);

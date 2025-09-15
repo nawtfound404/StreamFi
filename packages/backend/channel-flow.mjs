@@ -23,6 +23,8 @@ function logStep(title, data) {
   if (data !== undefined) console.log(data);
 }
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 async function req(path, { method = 'GET', token, json, raw, headers: extraHeaders } = {}) {
   const headers = { 'content-type': 'application/json', ...(extraHeaders || {}) };
   if (token) headers['authorization'] = `Bearer ${token}`;
@@ -189,12 +191,26 @@ async function main() {
   }
 
   logStep('5) Fetch channel init for EIP-712');
-  const init = await channelsInit(token, streamId);
+  let init = await channelsInit(token, streamId);
   logStep('Init', init);
 
   const depositWei = String(process.env.E2E_DEPOSIT_WEI || '300000000000000'); // default 0.0003 ETH to allow two tips
   logStep('6) Open channel', { streamId, depositWei });
-  let opened = await openChannel(token, streamId, depositWei, viewerAddress);
+  let opened;
+  try {
+    opened = await openChannel(token, streamId, depositWei, viewerAddress);
+  } catch (e) {
+    const msg = String(e.message || '');
+    if (/Streamer has no vault/i.test(msg)) {
+      logStep('Streamer has no vault; retrying after short delay');
+      await sleep(800);
+      init = await channelsInit(token, streamId);
+      logStep('Re-init', init);
+      opened = await openChannel(token, streamId, depositWei, viewerAddress);
+    } else {
+      throw e;
+    }
+  }
   logStep('Open result', opened);
   let channelId = opened.channelId;
 
@@ -312,6 +328,9 @@ async function main() {
   logStep('9) Close channel');
   const closed = await closeChannel(token, channelId);
   logStep('Close result', closed);
+  if (closed?.alreadyClosed || closed?.skippedOnchain) {
+    logStep('Close note', { alreadyClosed: !!closed.alreadyClosed, skippedOnchain: !!closed.skippedOnchain });
+  }
 
   // Adjudicate with last state (serialize bigints)
   logStep('10) Adjudicate');
