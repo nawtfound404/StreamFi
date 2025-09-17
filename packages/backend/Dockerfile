@@ -1,36 +1,44 @@
-# Start from a clean Node.js 20 Alpine image
-FROM node:20-alpine
+# ------------------------
+# Stage 1: Build
+# ------------------------
+FROM node:18-alpine AS builder
 
-# Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# Install system dependencies
+# Install system dependencies needed for build
 RUN apk add --no-cache openssl curl
 
-# Copy package files first to leverage Docker's build cache
-# Build context is packages/backend
+# Install all dependencies (including dev) for build
 COPY package*.json ./
-# Remove any residual prisma artifacts before installing
-RUN rm -rf prisma && npm install && npm prune --production=false && npm cache clean --force
+RUN npm install
 
-COPY src ./src
+# Copy source and compile
 COPY tsconfig.json ./
-# Double ensure prisma not copied back in (in case of stale host dir)
-RUN rm -rf prisma src/lib/prisma.ts || true
+COPY src ./src
+RUN npm run build
 
-# ABI is in src/services/abi/Nitrolite.ts, no external copy needed
+# ------------------------
+# Stage 2: Runtime
+# ------------------------
+FROM node:18-alpine AS runner
 
-# Build the TypeScript project
-RUN npm run build \
-	&& rm -f dist/lib/prisma.js dist/lib/prisma.js.map || true
+WORKDIR /usr/src/app
 
-# Expose the application port
-EXPOSE 8000
+# Install system dependencies needed at runtime
+RUN apk add --no-cache openssl curl
 
-# Copy entrypoint and run it (no prisma migrate for Mongo)
+# Install only production deps
+COPY package*.json ./
+RUN npm install --omit=dev && npm cache clean --force
+
+# Copy compiled app from builder
+COPY --from=builder /usr/src/app/dist ./dist
+
+# Copy entrypoint script
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
-# Normalize line endings to avoid CRLF issues on Alpine, then make executable
 RUN sed -i 's/\r$//' ./docker-entrypoint.sh \
-	&& chmod +x ./docker-entrypoint.sh
+    && chmod +x ./docker-entrypoint.sh
+
+EXPOSE 8000
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
