@@ -44,3 +44,15 @@ node_modules/
 packages/foundry-contracts/out/
 packages/foundry-contracts/cache/
 packages/foundry-contracts/broadcast/
+
+dist/
+packages/backend/prisma/migrations/
+packages/backend/prisma/dev.db
+packages/backend/prisma/dev.db-journal
+packages/backend/prisma/.env
+packages/backend/.turbo
+packages/backend/.env.local
+packages/backend/.env.development.local
+packages/backend/.env.test.local
+packages/backend/.env.production.local
+packages/backend/.next

@@ -1,7 +1,7 @@
 # frontend/Dockerfile
 
 # 1. Base Image
-FROM node:20-alpine AS base
+FROM node:current-alpine AS base
 # Add glibc compatibility for Next.js binaries on Alpine
 RUN apk add --no-cache libc6-compat
 ENV NEXT_TELEMETRY_DISABLED=1
