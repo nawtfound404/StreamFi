@@ -16,8 +16,6 @@ services:
   # MongoDB (development)
   mongo:
     image: mongo:6.0
-    ports:
-      - "27017:27017"
     volumes:
       - mongo-data:/data/db
     networks:
@@ -26,13 +24,13 @@ services:
   # Node Media Server
   nms:
     build:
-      context: ./packages/media-server
+      context: ${MEDIA_SERVER_CONTEXT:-./media-server}
       dockerfile: Dockerfile
     ports:
       - "1935:1935"   # RTMP ingest
       - "8081:8080"   # HLS HTTP (external:internal)
     env_file:
-      - ./packages/media-server/.env
+      - ./packages/media-server/.env   # keep NMS-specific envs here
     networks:
       - streamfi-net
 

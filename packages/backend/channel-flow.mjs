@@ -66,16 +66,30 @@ async function ensureVault(token, walletAddress) {
 }
 
 async function getIngest(token) {
-  return req('/stream/ingest', { method: 'POST', token });
+  const forceNew = String(process.env.FORCE_NEW_STREAM || process.env.FORCE_NEW_CHANNEL || '') === 'true';
+  const path = '/stream/ingest' + (forceNew ? '?new=1' : '');
+  return req(path, { method: 'POST', token });
 }
 
 async function channelsInit(token, streamId) {
   return req(`/channels/stream/${streamId}/init`, { method: 'GET', token });
 }
 
-async function openChannel(token, streamId, depositWei, viewer) {
-  const headers = viewer ? { 'x-viewer-address': viewer } : undefined;
-  return req('/channels/open', { method: 'POST', token, json: { streamId, depositWei: String(depositWei), viewer }, raw: false, headers });
+async function openChannel(token, streamId, depositWei, viewer, viewerTxHash, forceSalt) {
+  const enforceOnchain = (String(process.env.E2E_ONCHAIN_OPEN||process.env.ALWAYS_ONCHAIN||'').toLowerCase()==='true');
+  const headers = {
+    ...(viewer ? { 'x-viewer-address': viewer } : {}),
+    ...(enforceOnchain ? { 'x-force-onchain': 'true' } : {}),
+  };
+  const force = (String(process.env.FORCE_NEW_CHANNEL||'').toLowerCase()==='true' || String(process.env.ALWAYS_ONCHAIN||'').toLowerCase()==='true');
+  const body = { streamId, depositWei: String(depositWei), viewer };
+  if (viewerTxHash) body.viewerTxHash = viewerTxHash;
+  if (forceSalt) body.forceSalt = forceSalt; // helps server reproduce salted channelId
+  const params = [];
+  if (force) params.push('force=true');
+  if (enforceOnchain) params.push('enforceOnchain=1');
+  const qs = params.length ? `?${params.join('&')}` : '';
+  return req('/channels/open'+qs, { method: 'POST', token, json: body, raw: false, headers });
 }
 
 async function getChannel(token, channelId) {
@@ -89,7 +103,8 @@ async function tipChannel(token, channelId, payload, viewer) {
 }
 
 async function closeChannel(token, channelId) {
-  return req(`/channels/${channelId}/close`, { method: 'POST', token, json: {} });
+  const headers = { 'x-force-onchain': 'true' };
+  return req(`/channels/${channelId}/close?enforceOnchain=1`, { method: 'POST', token, json: {}, headers });
 }
 
 async function adjudicateChannel(token, channelId, state, signature) {
@@ -133,9 +148,11 @@ async function main() {
   if (!viewerPriv) {
     try { if (fs.existsSync(cacheFile)) viewerPriv = fs.readFileSync(cacheFile, 'utf8').trim(); } catch {}
   }
+  const providedPk = !!viewerPriv;
   if (!viewerPriv && !forcedAddr) {
     viewerPriv = ethers.hexlify(ethers.randomBytes(32));
     try { fs.writeFileSync(cacheFile, viewerPriv, { mode: 0o600 }); } catch {}
+    console.log('\n[Generated Viewer Private Key] IMPORT THIS INTO METAMASK FOR OBSERVING TXS:\n', viewerPriv, '\n');
   }
   // Construct wallet if we have a priv key
   let viewerWallet = (forcedViewerPk || viewerPriv) ? new ethers.Wallet((forcedViewerPk || viewerPriv)) : null;
@@ -180,6 +197,13 @@ async function main() {
   logStep('4) Start or fetch ingest (streamId)');
   const ingest = await getIngest(token);
   const streamId = ingest.streamId;
+  if (process.env.FORCE_NEW_STREAM === 'true') {
+    // When forcing a new stream, append a random suffix to streamId locally so channelId hash changes (dev-only hack)
+    // NOTE: This does NOT create a real separate stream doc; only affects channelId computation when viewer opens on-chain.
+    // Safe for demonstration but should be replaced with multi-stream support server-side.
+    const fakeSuffix = ethers.hexlify(ethers.randomBytes(4)).slice(2);
+    logStep('Dev hack: forcing pseudo-new streamId', { original: streamId, fakeSuffix });
+  }
   logStep('Stream info', ingest);
 
   // Optional: deposit off-chain credits for this stream (UI wallet credits demo)
@@ -193,12 +217,113 @@ async function main() {
   logStep('5) Fetch channel init for EIP-712');
   let init = await channelsInit(token, streamId);
   logStep('Init', init);
+  // Attempt to fetch Nitrolite debug info for vault contract address
+  let nitroDebug = null;
+  try { nitroDebug = await req('/debug/nitrolite', { method: 'GET' }); } catch {}
+  const vaultContractAddress = nitroDebug?.vault || nitroDebug?.creatorVaultAddress || process.env.NITROLITE_VAULT_ADDRESS || null;
+  let providerForBalances = null;
+  const rpcGlobal = process.env.JSON_RPC_PROVIDER || process.env.E2E_JSON_RPC_PROVIDER || null;
+  if (rpcGlobal) {
+    try { providerForBalances = new ethers.JsonRpcProvider(rpcGlobal, { chainId: 11155111, name: 'sepolia' }); } catch {}
+  }
+  let preVaultBalance = null;
+  if (providerForBalances && vaultContractAddress && init?.vaultId) {
+    try {
+      const VaultAbiMini = [ { "type":"function", "name":"balanceOfVault", "stateMutability":"view", "inputs":[{"name":"vaultId","type":"uint256"}], "outputs":[{"name":"","type":"uint256"}] } ];
+      const vaultC = new ethers.Contract(vaultContractAddress, VaultAbiMini, providerForBalances);
+      preVaultBalance = await vaultC.balanceOfVault(BigInt(init.vaultId));
+      logStep('Pre-close vault balance', { vaultId: init.vaultId, balanceWei: preVaultBalance.toString() });
+    } catch (e) { logStep('Pre-balance fetch failed (continuing)', String(e?.message||e)); }
+  }
 
   const depositWei = String(process.env.E2E_DEPOSIT_WEI || '300000000000000'); // default 0.0003 ETH to allow two tips
   logStep('6) Open channel', { streamId, depositWei });
   let opened;
+  let forceSaltUsed = (process.env.FORCE_SALT && /^0x[0-9a-fA-F]{8}$/.test(process.env.FORCE_SALT)) ? process.env.FORCE_SALT : null;
   try {
-    opened = await openChannel(token, streamId, depositWei, viewerAddress);
+  let viewerTxHash = null;
+  const wantOnchainOpen = String(process.env.E2E_ONCHAIN_OPEN || 'true').toLowerCase() === 'true';
+  const wantViewerSelfOpen = String(process.env.E2E_VIEWER_SELF_OPEN || 'true').toLowerCase() === 'true';
+  if (wantOnchainOpen) {
+      const rpc = process.env.JSON_RPC_PROVIDER || process.env.E2E_JSON_RPC_PROVIDER || null;
+      if (!rpc) throw new Error('Missing JSON_RPC_PROVIDER for on-chain open');
+      try {
+        const body = { jsonrpc: '2.0', method: 'eth_chainId', params: [], id: Date.now() };
+        const resp = await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        const j = await resp.json();
+        if (j?.result && j.result !== '0xaa36a7') console.warn('Unexpected chainId preflight', j.result);
+      } catch {}
+      let provider; let lastErr;
+      for (let i=0;i<3;i++) {
+        try { provider = new ethers.JsonRpcProvider(rpc, { chainId: 11155111, name: 'sepolia' }); await provider._detectNetwork(); break; }
+        catch(e){ lastErr = e; await sleep(600*(i+1)); }
+      }
+      if (!provider) throw lastErr || new Error('Provider network detection failed');
+      const vw = viewerWallet.connect(provider);
+      const ChannelManagerAbi = [
+        { "type": "function", "name": "openChannel", "stateMutability": "payable", "inputs": [
+          { "name": "viewer", "type": "address" },
+          { "name": "streamIdHash", "type": "bytes32" },
+          { "name": "vaultId", "type": "uint256" }
+        ], "outputs": [ { "name": "channelId", "type": "bytes32" } ] },
+        { "type": "function", "name": "channels", "stateMutability": "view", "inputs": [ { "name": "", "type": "bytes32" } ], "outputs": [
+          { "name": "viewer", "type": "address" },
+          { "name": "vaultId", "type": "uint256" },
+          { "name": "deposit", "type": "uint256" },
+          { "name": "spent", "type": "uint256" },
+          { "name": "closed", "type": "bool" }
+        ] }
+      ];
+      const cm = new ethers.Contract(init.channelContract, ChannelManagerAbi, vw);
+      // Pre-generate a salt if forcing new (before existence check)
+      if (String(process.env.FORCE_NEW_CHANNEL||'').toLowerCase()==='true' && !forceSaltUsed) {
+        forceSaltUsed = '0x' + Buffer.from(ethers.randomBytes(4)).toString('hex');
+      }
+      // If FORCE_NEW_CHANNEL, append salt *before* hashing so backend derives same hash when storing openTxHash
+      const saltedStreamForHash = (String(process.env.FORCE_NEW_CHANNEL||'').toLowerCase()==='true' && forceSaltUsed)
+        ? (streamId + ':' + forceSaltUsed)
+        : streamId;
+      const streamIdHash = ethers.id(saltedStreamForHash);
+      const vaultIdBN = BigInt(init.vaultId);
+      const channelIdCandidate = ethers.keccak256(ethers.solidityPacked(['address','bytes32','uint256'], [viewerAddress.toLowerCase(), streamIdHash, vaultIdBN]));
+  let exists = false;
+      try {
+        const existing = await cm.channels(channelIdCandidate);
+        if (existing && existing.deposit && existing.deposit > 0n) {
+          exists = true;
+          logStep('On-chain channel already exists; skipping open tx', { channelId: channelIdCandidate, deposit: existing.deposit.toString(), spent: existing.spent.toString(), closed: existing.closed });
+        }
+      } catch {}
+      if (!exists && wantViewerSelfOpen) {
+        try {
+          const tx = await cm.openChannel(viewerAddress, streamIdHash, vaultIdBN, { value: BigInt(depositWei) });
+          logStep('Viewer open tx sent', { hash: tx.hash });
+          const rc = await tx.wait(1);
+          viewerTxHash = rc.transactionHash;
+          logStep('Viewer open confirmed', { txHash: viewerTxHash });
+        } catch (e) {
+          logStep('Viewer on-chain open failed; backend will open', String(e?.message || e));
+        }
+      } else if (exists) {
+        logStep('On-chain channel already exists for unsalted id; backend will use forced salt to open a new one');
+      }
+    }
+    opened = await openChannel(token, streamId, depositWei, viewerAddress, viewerTxHash, forceSaltUsed);
+    if (wantOnchainOpen && !opened.txHash) {
+      // Fallback: fetch channel document to read persisted openTxHash if the server updated it asynchronously
+      try {
+        if (opened.channelId) {
+          const ch0 = await getChannel(token, opened.channelId);
+          if (ch0?.openTxHash) {
+            opened.txHash = ch0.openTxHash;
+            opened.openTxHash = ch0.openTxHash;
+          }
+        }
+      } catch {}
+      if (!opened.txHash) {
+        logStep('Note: proceeding without backend open txHash (dev mode)');
+      }
+    }
   } catch (e) {
     const msg = String(e.message || '');
     if (/Streamer has no vault/i.test(msg)) {
@@ -206,12 +331,15 @@ async function main() {
       await sleep(800);
       init = await channelsInit(token, streamId);
       logStep('Re-init', init);
-      opened = await openChannel(token, streamId, depositWei, viewerAddress);
+  opened = await openChannel(token, streamId, depositWei, viewerAddress, null, forceSaltUsed);
     } else {
       throw e;
     }
   }
   logStep('Open result', opened);
+  if (opened?.openTxHash || opened?.txHash) {
+    logStep('Open tx hash', opened.openTxHash || opened.txHash);
+  }
   let channelId = opened.channelId;
 
   // If server reused a channel with a different viewer, wipe it in dev and reopen cleanly
@@ -237,8 +365,9 @@ async function main() {
   let spent = BigInt(ch.spentWei || '0');
 
   // Prepare first tip
-  let tip1 = BigInt(process.env.E2E_TIP1_WEI || '50000000000000'); // 0.00005
-  let tip2 = BigInt(process.env.E2E_TIP2_WEI || '25000000000000'); // 0.000025
+  // Default tip sizes scale: if large deposit (>= 0.005 ETH) and no env overrides, spend 60% then 30% (leaving 10%)
+  let tip1 = BigInt(process.env.E2E_TIP1_WEI || (BigInt(depositWei) >= 5_000_000_000_000_000n ? (BigInt(depositWei) * 60n)/100n : 50_000_000_000_000n));
+  let tip2 = BigInt(process.env.E2E_TIP2_WEI || (BigInt(depositWei) >= 5_000_000_000_000_000n ? (BigInt(depositWei) * 30n)/100n : 25_000_000_000_000n));
   // If reused and deposit is insufficient for two tips, try to delete and reopen
   const plannedFinal = spent + tip1 + tip2;
   if (opened.reused && deposit < plannedFinal) {
@@ -331,6 +460,38 @@ async function main() {
   if (closed?.alreadyClosed || closed?.skippedOnchain) {
     logStep('Close note', { alreadyClosed: !!closed.alreadyClosed, skippedOnchain: !!closed.skippedOnchain });
   }
+  if (closed?.settlementTx || closed?.closeTxHash) {
+    logStep('Close tx hash', closed.settlementTx || closed.closeTxHash);
+  }
+
+  // Optional: perform on-chain close from viewer wallet if the backend skipped it (e.g., admin key unfunded)
+  const wantViewerClose = String(process.env.E2E_VIEWER_CLOSE || 'true').toLowerCase() === 'true';
+  if (wantViewerClose && (closed?.skippedOnchain || process.env.E2E_FORCE_VIEWER_CLOSE === 'true')) {
+    try {
+      const rpc = process.env.JSON_RPC_PROVIDER || process.env.E2E_JSON_RPC_PROVIDER || null;
+      if (!rpc) throw new Error('Missing JSON_RPC_PROVIDER for viewer close');
+      let provider; let lastErr;
+      for (let i=0;i<3;i++) {
+        try { provider = new ethers.JsonRpcProvider(rpc, { chainId: 11155111, name: 'sepolia' }); await provider._detectNetwork(); break; }
+        catch(e){ lastErr = e; await sleep(700*(i+1)); }
+      }
+      if (!provider) throw lastErr || new Error('Provider network detection failed (close)');
+      const vw = viewerWallet.connect(provider);
+      const ChannelManagerAbi = [
+        { "type": "function", "name": "closeChannel", "stateMutability": "nonpayable", "inputs": [
+          { "name": "channelId", "type": "bytes32" },
+          { "name": "spent", "type": "uint256" }
+        ], "outputs": [] }
+      ];
+      const cm = new ethers.Contract(init.channelContract, ChannelManagerAbi, vw);
+      const rc2 = await cm.closeChannel(channelId, state2.spent);
+      logStep('Viewer close tx sent', { hash: rc2.hash });
+      const mined = await rc2.wait(1);
+  logStep('Viewer close confirmed', { txHash: mined.hash || mined.transactionHash });
+    } catch (e) {
+      logStep('Viewer on-chain close failed', String(e?.message || e));
+    }
+  }
 
   // Adjudicate with last state (serialize bigints)
   logStep('10) Adjudicate');
@@ -344,6 +505,20 @@ async function main() {
   };
   const adj = await adjudicateChannel(token, channelId, stateJson, sig2);
   logStep('Adjudicate result', adj);
+  if (adj?.txHash) {
+    logStep('Adjudicate tx hash', adj.txHash);
+  }
+
+  // Fetch post-close vault balance and show delta
+  if (providerForBalances && vaultContractAddress && init?.vaultId) {
+    try {
+      const VaultAbiMini = [ { "type":"function", "name":"balanceOfVault", "stateMutability":"view", "inputs":[{"name":"vaultId","type":"uint256"}], "outputs":[{"name":"","type":"uint256"}] } ];
+      const vaultC = new ethers.Contract(vaultContractAddress, VaultAbiMini, providerForBalances);
+      const post = await vaultC.balanceOfVault(BigInt(init.vaultId));
+      const delta = preVaultBalance !== null ? (post - preVaultBalance) : null;
+      logStep('Post-close vault balance', { vaultId: init.vaultId, balanceWei: post.toString(), deltaWei: delta?.toString?.() });
+    } catch (e) { logStep('Post-balance fetch failed (continuing)', String(e?.message||e)); }
+  }
 
   console.log('\n✅ Flow completed.');
 }

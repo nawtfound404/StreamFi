@@ -20,6 +20,7 @@ const channel_routes_1 = __importDefault(require("../modules/channels/channel.ro
 const mongo_1 = require("../lib/mongo");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const environment_1 = require("../config/environment");
+const yellow_service_1 = require("../services/yellow.service");
 const router = (0, express_1.Router)();
 router.use('/auth', rateLimiter_1.authBurstLimiter, auth_routes_1.default);
 router.use('/stream', stream_routes_1.default);
@@ -33,6 +34,24 @@ router.use('/payments', rateLimiter_1.authBurstLimiter, payments_routes_1.defaul
 router.use('/reactions', reactions_routes_1.default);
 router.use('/nms', nms_routes_1.default);
 router.use('/channels', channel_routes_1.default);
+// Nitrolite readiness before export (ensure route registration)
+router.get('/debug/nitrolite', async (_req, res) => {
+    try {
+        const ready = yellow_service_1.yellowService.isReady?.() ?? false;
+        const out = {
+            ready,
+            chainId: environment_1.env.yellow.chainId,
+            custody: environment_1.env.nitrolite.custody,
+            adjudicator: environment_1.env.nitrolite.adjudicator,
+            token: environment_1.env.nitrolite.token,
+            vault: environment_1.env.nitrolite.vault,
+        };
+        return res.json(out);
+    }
+    catch (e) {
+        return res.status(500).json({ ok: false, error: e.message });
+    }
+});
 // Lightweight diagnostic endpoint (non-sensitive). Remove in production.
 router.get('/debug/db', async (_req, res) => {
     try {

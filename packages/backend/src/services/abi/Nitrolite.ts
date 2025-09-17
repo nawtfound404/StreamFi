@@ -34,9 +34,41 @@ const Nitrolite = {
       outputs: [ { name: 'owner', type: 'address', internalType: 'address' } ],
     },
 
+    { type: 'function', name: 'name', stateMutability: 'view',
+      inputs: [], outputs: [ { name: '', type: 'string', internalType: 'string' } ] },
+
     { type: 'function', name: 'deposit', stateMutability: 'payable',
       inputs: [ { name: 'vaultId', type: 'uint256', internalType: 'uint256' } ],
       outputs: [],
+    },
+
+    { type: 'function', name: 'balanceOfVault', stateMutability: 'view',
+      inputs: [ { name: 'vaultId', type: 'uint256', internalType: 'uint256' } ],
+      outputs: [ { name: '', type: 'uint256', internalType: 'uint256' } ],
+    },
+
+    { type: 'function', name: 'withdraw', stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'vaultId', type: 'uint256', internalType: 'uint256' },
+        { name: 'receiver', type: 'address', internalType: 'address' },
+        { name: 'amount', type: 'uint96', internalType: 'uint96' },
+      ],
+      outputs: [],
+    },
+
+    { type: 'function', name: 'withdrawWithSignature', stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'vaultId', type: 'uint256', internalType: 'uint256' },
+        { name: 'receiver', type: 'address', internalType: 'address' },
+        { name: 'amount', type: 'uint96', internalType: 'uint96' },
+        { name: 'signature', type: 'bytes', internalType: 'bytes' },
+      ],
+      outputs: [],
+    },
+
+    { type: 'function', name: 'nonces', stateMutability: 'view',
+      inputs: [ { name: 'vaultId', type: 'uint256', internalType: 'uint256' } ],
+      outputs: [ { name: '', type: 'uint64', internalType: 'uint64' } ],
     },
 
     { type: 'function', name: 'tokenURI', stateMutability: 'view',
