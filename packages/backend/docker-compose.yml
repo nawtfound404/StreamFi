@@ -5,20 +5,18 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      - mongo
     environment:
-      DATABASE_URL: "postgresql://user:password@db:5432/streamfi?schema=public"
+      # Use MongoDB for StreamFi, not Postgres
+      DATABASE_URL: "mongodb+srv://7317520025a_db_user:zZOYiPQvh1CDhnSE@cluster0.qywxnuo.mongodb.net/streamfi?retryWrites=true&w=majority&appName=Cluster0"
 
-  db:
-    image: postgres:14-alpine
+
+  mongo:
+    image: mongo:6.0
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data/
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: streamfi
+      - mongo-data:/data/db
 
 volumes:
-  postgres_data:
+  mongo-data:

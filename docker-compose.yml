@@ -1,4 +1,18 @@
 services:
+  # Nginx reverse proxy for production
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+      - nms
+    networks:
+      - streamfi-net
+
   # MongoDB (development)
   mongo:
     image: mongo:6.0
@@ -18,7 +32,7 @@ services:
       - "1935:1935"   # RTMP ingest
       - "8081:8080"   # HLS HTTP (external:internal)
     env_file:
-      - ./packages/media-server/.env   # keep NMS-specific envs here
+      - ./packages/media-server/.env
     networks:
       - streamfi-net
 
@@ -32,7 +46,6 @@ services:
     env_file:
       - ./packages/backend/.env
     environment:
-      # Fallback local Mongo if not provided in env_file
       DATABASE_URL: ${DATABASE_URL:-mongodb://mongo:27017/streamfi}
       MONGO_DB_NAME: ${MONGO_DB_NAME:-streamfi}
       CSRF_SECURE: "false"
