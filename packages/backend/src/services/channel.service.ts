@@ -38,7 +38,7 @@ export function generateChannelId(viewer: string, streamId: string, vaultId: big
   return ethers.keccak256(preimage);
 }
 
-export async function openChannel(params: { viewer: string; streamId: string; depositWei: bigint }) {
+export async function openChannel(params: { viewer: string; streamId: string; depositWei: bigint; forceNew?: boolean; forceSalt?: string }) {
   await connectMongo();
   const stream = await StreamModel.findById(params.streamId).lean();
   if (!stream) throw new Error('Stream not found');
@@ -66,7 +66,7 @@ export async function openChannel(params: { viewer: string; streamId: string; de
   const vaultId = BigInt((streamer as any).vaultId);
   const channelId = generateChannelId(params.viewer, params.streamId, vaultId);
   const existing: any = await ChannelModel.findOne({ channelId }).lean();
-  if (existing) {
+  if (existing && !params.forceNew) {
     // If an existing channel is not OPEN (e.g., CLOSED/CLOSING), "re-open" it by resetting state.
     if (existing.status !== 'OPEN') {
       await ChannelModel.updateOne(
@@ -84,6 +84,26 @@ export async function openChannel(params: { viewer: string; streamId: string; de
       return { channelId, reused: false, record: { ...existing, streamerVaultId: (streamer as any).vaultId } };
     }
     return { reused: true, channelId };
+  }
+  if (existing && params.forceNew) {
+    // Create a synthetic new channelId by salting the streamId preimage (client provided salt preferred for deterministic viewer-side tx)
+    const salt = params.forceSalt && /^0x[0-9a-fA-F]{8}$/.test(params.forceSalt)
+      ? params.forceSalt
+      : ethers.hexlify(ethers.randomBytes(4));
+    const saltedId = generateChannelId(params.viewer, params.streamId + ':' + salt, vaultId);
+    const docForced = await ChannelModel.create({
+      channelId: saltedId,
+      streamId: params.streamId,
+      viewerAddress: params.viewer.toLowerCase(),
+      streamerUserId: streamer?._id,
+      streamerVaultId: (streamer as any).vaultId,
+      depositWei: params.depositWei.toString(),
+      spentWei: '0',
+      nonce: 0,
+      status: 'OPEN',
+      forceSalt: salt,
+    });
+    return { channelId: saltedId, reused: false, record: docForced.toObject() };
   }
   const doc = await ChannelModel.create({
     channelId,
@@ -162,5 +182,5 @@ export async function closeChannelCooperative(channelId: string) {
     }
   }
   await ChannelModel.updateOne({ channelId }, { $set: { status: 'CLOSED', closeTxHash: depositTx } });
-  return { ok: true, channelId, deposited: spent.toString(), vaultId: vaultId.toString(), depositTxHash: depositTx };
+  return { ok: true, channelId, deposited: spent.toString(), vaultId: vaultId.toString(), depositTxHash: depositTx, closeStatus: 'CLOSED' };
 }

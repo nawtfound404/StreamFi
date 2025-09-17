@@ -8,6 +8,7 @@ import { emitToStream } from '../../lib/socket';
 import { ChannelModel, connectMongo } from '../../lib/mongo';
 import { blockchainService } from '../../services/blockchain.service';
 import { ethers } from 'ethers';
+import { logger } from '../../utils/logger';
 
 const router = Router();
 
@@ -115,7 +116,7 @@ router.post('/open', async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ message: 'unauthorized' });
-    const { streamId, depositWei, viewer: viewerOverride } = req.body as { streamId: string; depositWei: string; viewer?: string };
+  const { streamId, depositWei, viewer: viewerOverride, viewerTxHash, forceSalt } = req.body as { streamId: string; depositWei: string; viewer?: string; viewerTxHash?: string; forceSalt?: string };
     if (!streamId || !depositWei) return res.status(400).json({ message: 'streamId & depositWei required' });
     const bn = BigInt(depositWei);
     if (bn < BigInt(env.yellow.minChannelDepositWei)) return res.status(400).json({ message: 'deposit below minimum' });
@@ -125,7 +126,9 @@ router.post('/open', async (req, res) => {
       ? viewerOverride.toLowerCase()
       : (headerViewer.startsWith('0x') ? headerViewer : (user.walletAddress || user.address || '')).toLowerCase());
     if (!viewer.startsWith('0x')) return res.status(400).json({ message: 'viewer wallet missing' });
-    let opened = await openChannel({ viewer, streamId, depositWei: bn });
+  const forceNew = [process.env.FORCE_NEW_CHANNEL, process.env.FORCE_NEW_STREAM, req.query.force]
+    .some(v => String(v||'').toLowerCase() === 'true');
+  let opened = await openChannel({ viewer, streamId, depositWei: bn, forceNew, forceSalt });
     // If server indicates reuse, but the record is CLOSED/CLOSING, re-open it by resetting state
     if (opened.reused) {
       await connectMongo();
@@ -146,12 +149,37 @@ router.post('/open', async (req, res) => {
         opened = { ...opened, reused: false, record: { ...existing, streamerVaultId: existing.streamerVaultId } } as any;
       }
     }
-    // Fire on-chain openChannel tx (admin signer) only when newly created
+  // Fire on-chain openChannel tx (admin signer) only when newly created
     let txHash: string | null = null;
-    if (!opened.reused && opened.record?.streamerVaultId) {
-      const vaultId = BigInt(opened.record.streamerVaultId);
+    // If a viewer signed and paid the deposit, validate their tx and record it; else fallback to admin-funded open.
+    // ALWAYS perform an on-chain open when enforcement flags or request overrides are set, even if reused.
+    const alwaysOnchainEnv = String(process.env.ALWAYS_ONCHAIN || process.env.E2E_ONCHAIN_OPEN || '').toLowerCase() === 'true';
+    const requestOverride = String(req.query.enforceOnchain || '').toLowerCase() === '1' || String(req.headers['x-force-onchain'] || '').toLowerCase() === 'true';
+    const alwaysOnchain = alwaysOnchainEnv || requestOverride;
+    // Load channel record if not present (reused=true returns no record)
+    await connectMongo();
+    const recordDoc: any = opened.record || await ChannelModel.findOne({ channelId: opened.channelId }).lean();
+    // If an openTxHash already exists (e.g., previous run), surface it immediately
+    if (recordDoc?.openTxHash) {
+      txHash = recordDoc.openTxHash;
+    }
+    // Effective streamId used for hashing when forced new (salt applied). This keeps original stream reference intact while producing unique channelId preimage.
+    const effectiveStreamId = (recordDoc?.forceSalt ? (streamId + ':' + recordDoc.forceSalt) : streamId);
+  if (!opened.reused && recordDoc?.streamerVaultId && viewerTxHash) {
       try {
-        const onchain = await yellowService.openChannel(viewer, streamId, vaultId, bn);
+    await yellowService.validateOpenTx(viewerTxHash, viewer, effectiveStreamId, BigInt(opened.record.streamerVaultId), bn);
+        txHash = viewerTxHash;
+        await ChannelModel.updateOne(
+          { channelId: opened.channelId },
+          { $set: { openTxHash: txHash } }
+        );
+      } catch (e: any) {
+        return res.status(400).json({ message: 'invalid viewer open tx', error: e?.message || String(e) });
+      }
+  } else if ((!opened.reused || forceNew || alwaysOnchain) && recordDoc?.streamerVaultId) {
+      const vaultId = BigInt(recordDoc.streamerVaultId);
+      try {
+        const onchain = await yellowService.openChannel(viewer, effectiveStreamId, vaultId, bn);
         txHash = onchain.txHash;
         // Persist the open transaction hash so we know this channel exists on-chain
         try {
@@ -159,20 +187,30 @@ router.post('/open', async (req, res) => {
             { channelId: opened.channelId },
             { $set: { openTxHash: txHash } }
           );
+          logger.info({ channelId: opened.channelId, txHash }, 'channel open on-chain');
         } catch {}
       } catch (e) {
-        // Non-fatal in dev: continue with off-chain channel even if on-chain open fails (e.g., insufficient admin funds)
-        txHash = null;
+        return res.status(500).json({ message: 'on-chain open failed', error: (e as any)?.message || String(e) });
       }
     }
+    // If on-chain was requested but txHash is still null, try to load from DB in case it was persisted asynchronously
+    if ((alwaysOnchain || viewerTxHash) && !txHash) {
+      try {
+        const refreshed: any = await ChannelModel.findOne({ channelId: opened.channelId }).lean();
+        if (refreshed?.openTxHash) txHash = refreshed.openTxHash;
+      } catch {}
+    }
+  // If channel record lacks openTxHash but we can detect existing on-chain channel (viewer-funded previously), allow client to resubmit via viewerTxHashDetect param (future enhancement)
     return res.status(200).json({
       channelId: opened.channelId,
       minTipWei: env.yellow.minTipWei,
       minDepositWei: env.yellow.minChannelDepositWei,
       chainId: env.yellow.chainId,
       contract: env.yellow.channelContract,
-      reused: opened.reused,
-      txHash,
+  reused: opened.reused,
+  txHash,
+  openTxHash: txHash,
+  forceSalt: opened.record?.forceSalt || null,
     });
   } catch (e: any) {
     return res.status(500).json({ message: e.message || 'failed' });
@@ -231,13 +269,17 @@ router.post('/:id/close', async (req, res) => {
   // Also close on-chain channel settlement with spentWei
   const ch: any = await ChannelModel.findOne({ channelId: req.params.id }).lean();
   const spent = BigInt(ch?.spentWei || '0');
-  // If we never successfully opened on-chain (no openTxHash), skip on-chain close to avoid revert noise
-  if (!ch?.openTxHash || out?.alreadyClosed) {
+  // Enforce on-chain close when flags set; otherwise preserve existing skip logic only if channel truly lacks an open tx.
+  const envForce = String(process.env.ALWAYS_ONCHAIN || process.env.E2E_VIEWER_CLOSE || '').toLowerCase() === 'true';
+  const reqForce = String(req.query.enforceOnchain || '').toLowerCase() === '1' || String(req.headers['x-force-onchain']||'').toLowerCase() === 'true';
+  const alwaysOnchain = envForce || reqForce;
+  if ((!ch?.openTxHash || out?.alreadyClosed) && !alwaysOnchain) {
     return res.json({ ...out, settlementTx: ch?.closeTxHash || null, skippedOnchain: !ch?.openTxHash, alreadyClosed: !!out?.alreadyClosed });
   }
   try {
     const onchain = await yellowService.closeChannel(req.params.id, spent);
-    return res.json({ ...out, settlementTx: onchain.txHash });
+  logger.info({ channelId: req.params.id, settlementTx: onchain.txHash }, 'channel close on-chain');
+  return res.json({ ...out, settlementTx: onchain.txHash, closeTxHash: onchain.txHash });
   } catch (e: any) {
     // If revert reason indicates it's already closed, treat as idempotent success
     const msg = e?.message || '';
@@ -245,11 +287,7 @@ router.post('/:id/close', async (req, res) => {
       return res.json({ ...out, settlementTx: null, alreadyClosed: true, onchainError: msg });
     }
     // Non-fatal in non-production environments: return cooperative close result even if on-chain close fails
-    if (process.env.NODE_ENV !== 'production') {
-      return res.json({ ...out, settlementTx: null, onchainError: e?.message || String(e) });
-    }
-    // In production, propagate error
-    throw e;
+    return res.status(500).json({ message: 'on-chain close failed', error: e?.message || String(e) });
   }
   } catch (e: any) { return res.status(400).json({ message: e.message }); }
 });

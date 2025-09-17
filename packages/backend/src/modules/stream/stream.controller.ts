@@ -18,12 +18,16 @@ export const getIngest = async (req: Request, res: Response) => {
 		const user = await UserModel.findById(userId).lean();
 	if (!user || (user as any).banned) return res.status(403).json({ message: 'Account banned' });
 
-	// Reuse existing active stream or create one
-		let stream: any = await StreamModel.findOne({ streamerId: new Types.ObjectId(userId) }).lean();
-		if (!stream) {
-			const created = await StreamModel.create({ title: 'My Stream', streamerId: new Types.ObjectId(userId), status: 'IDLE' });
-			stream = created.toObject();
-		}
+  const forceNew = String(req.query.new||'').trim() === '1';
+	// Reuse existing active stream or create one (allow forced creation via ?new=1)
+	let stream: any = null;
+	if (!forceNew) {
+		stream = await StreamModel.findOne({ streamerId: new Types.ObjectId(userId) }).lean();
+	}
+	if (!stream) {
+		const created = await StreamModel.create({ title: 'My Stream', streamerId: new Types.ObjectId(userId), status: 'IDLE' });
+		stream = created.toObject();
+	}
 
 		let streamKey = (stream as any).streamKey as string | undefined;
 	if (!streamKey) {
