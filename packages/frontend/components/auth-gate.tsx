@@ -13,29 +13,26 @@ export function AuthGate() {
 
   useEffect(() => {
     if (!pathname) return;
-    // Public pages that should never force-auth redirect
     const isPublic =
-      pathname === "/" ||
-      pathname.startsWith("/auth") ||
-      pathname.startsWith("/signup") ||
-      pathname.startsWith("/streams") ||
-      pathname.startsWith("/watch");
+      pathname === "/landing" ||
+      pathname === "/signup" ||
+      pathname.startsWith("/auth");
 
-    // If unauthenticated and route is protected -> send to /auth
+    // If unauthenticated and route is not public, redirect to /landing
     if (!session && !isPublic) {
-      if (pathname !== "/auth") router.replace("/auth");
+      if (pathname !== "/landing") router.replace("/landing");
       return;
     }
 
-    // If authenticated and on auth-only routes, land on dashboard
-    if (session && (pathname.startsWith("/auth") || pathname.startsWith("/signup"))) {
+    // If authenticated and on auth-only or landing routes, land on dashboard
+    if (session && (pathname.startsWith("/auth") || pathname === "/signup" || pathname === "/landing")) {
       if (pathname !== "/dashboard") router.replace("/dashboard");
       return;
     }
 
-  // Note: /streamer is allowed for any authenticated user; the page itself shows
-  // a CTA to become a creator if the role isn't STREAMER/ADMIN. Keeping this here
-  // avoids a redirect loop and matches the page flow.
+    // Note: /streamer is allowed for any authenticated user; the page itself shows
+    // a CTA to become a creator if the role isn't STREAMER/ADMIN. Keeping this here
+    // avoids a redirect loop and matches the page flow.
   }, [pathname, router, session]);
 
   return null;
