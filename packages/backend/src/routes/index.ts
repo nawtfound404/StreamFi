@@ -15,6 +15,7 @@ import channelRoutes from '../modules/channels/channel.routes';
 import { connectMongo, UserModel } from '../lib/mongo';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/environment';
+import { yellowService } from '../services/yellow.service';
 
 const router = Router();
 router.use('/auth', authBurstLimiter, authRoutes);
@@ -29,6 +30,37 @@ router.use('/payments', authBurstLimiter, paymentsRoutes);
 router.use('/reactions', reactionsRoutes);
 router.use('/nms', nmsRoutes);
 router.use('/channels', channelRoutes);
+
+// Nitrolite readiness before export (ensure route registration)
+router.get('/debug/nitrolite', async (_req, res) => {
+	try {
+		const ready = yellowService.isReady?.() ?? false;
+		const admin = await yellowService.getAdminStatus?.();
+		const out = {
+			ready,
+			chainId: env.yellow.chainId,
+			custody: env.nitrolite.custody,
+			adjudicator: env.nitrolite.adjudicator,
+			token: env.nitrolite.token,
+			vault: env.nitrolite.vault,
+			admin,
+		};
+		return res.json(out);
+	} catch (e: any) {
+		return res.status(500).json({ ok: false, error: e.message });
+	}
+});
+
+// Check on-chain channel by id
+router.get('/debug/channel/:id', async (req, res) => {
+	try {
+		const id = req.params.id;
+		const onchain = await yellowService.getOnchainChannel(id);
+		return res.json({ ok: true, onchain });
+	} catch (e: any) {
+		return res.status(500).json({ ok: false, error: e.message });
+	}
+});
 
 // Lightweight diagnostic endpoint (non-sensitive). Remove in production.
 router.get('/debug/db', async (_req, res) => {

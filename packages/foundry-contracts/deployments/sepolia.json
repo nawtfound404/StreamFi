@@ -2,7 +2,7 @@
   "network":"sepolia",
   "deployBlock":9194395,
   "token":"0x652cAF8A7688f583E93C22b19F635F9c2532D453",
-  "custody":"0xc04D1A1152e4803B3FCe6bae8200dFe19C1D6",
+  "custody":"0xc04D1A1152e4803B3FCe6bae8200dFe19Be1C9D6",
   "adjudicator":"0xb79C129317ec545d1268a2AAedf26146f353a6d5",
   "vault":"0x04bBFf33518F6F3FDd2cB93897826635CceaE71A"
 }

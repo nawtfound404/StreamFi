@@ -39,12 +39,32 @@ async function openChannel(params) {
     const streamer = await mongo_1.UserModel.findById(stream.streamerId).lean();
     if (!streamer)
         throw new Error('Streamer not found');
-    if (!streamer.vaultId)
-        throw new Error('Streamer has no vault');
+    if (!streamer.vaultId) {
+        // Attempt to discover/attach a vault id using on-chain state
+        if (streamer.walletAddress) {
+            try {
+                const owned = await blockchain_service_1.blockchainService.getTokensByOwner(streamer.walletAddress);
+                if (owned && owned.length > 0) {
+                    await mongo_1.UserModel.updateOne({ _id: streamer._id }, { $set: { vaultId: owned[0].toString() } });
+                    streamer.vaultId = owned[0].toString();
+                }
+                else if (process.env.NODE_ENV !== 'production') {
+                    // Dev fallback: derive deterministic mock vault id to unblock local flows
+                    const h = ethers_1.ethers.keccak256(ethers_1.ethers.toUtf8Bytes(streamer.walletAddress.toLowerCase()));
+                    const v = (BigInt(h) & ((1n << 56n) - 1n)).toString();
+                    await mongo_1.UserModel.updateOne({ _id: streamer._id }, { $set: { vaultId: v } });
+                    streamer.vaultId = v;
+                }
+            }
+            catch { }
+        }
+        if (!streamer.vaultId)
+            throw new Error('Streamer has no vault');
+    }
     const vaultId = BigInt(streamer.vaultId);
     const channelId = generateChannelId(params.viewer, params.streamId, vaultId);
     const existing = await mongo_1.ChannelModel.findOne({ channelId }).lean();
-    if (existing) {
+    if (existing && !params.forceNew) {
         // If an existing channel is not OPEN (e.g., CLOSED/CLOSING), "re-open" it by resetting state.
         if (existing.status !== 'OPEN') {
             await mongo_1.ChannelModel.updateOne({ channelId }, {
@@ -59,6 +79,26 @@ async function openChannel(params) {
             return { channelId, reused: false, record: { ...existing, streamerVaultId: streamer.vaultId } };
         }
         return { reused: true, channelId };
+    }
+    if (existing && params.forceNew) {
+        // Create a synthetic new channelId by salting the streamId preimage (client provided salt preferred for deterministic viewer-side tx)
+        const salt = params.forceSalt && /^0x[0-9a-fA-F]{8}$/.test(params.forceSalt)
+            ? params.forceSalt
+            : ethers_1.ethers.hexlify(ethers_1.ethers.randomBytes(4));
+        const saltedId = generateChannelId(params.viewer, params.streamId + ':' + salt, vaultId);
+        const docForced = await mongo_1.ChannelModel.create({
+            channelId: saltedId,
+            streamId: params.streamId,
+            viewerAddress: params.viewer.toLowerCase(),
+            streamerUserId: streamer?._id,
+            streamerVaultId: streamer.vaultId,
+            depositWei: params.depositWei.toString(),
+            spentWei: '0',
+            nonce: 0,
+            status: 'OPEN',
+            forceSalt: salt,
+        });
+        return { channelId: saltedId, reused: false, record: docForced.toObject() };
     }
     const doc = await mongo_1.ChannelModel.create({
         channelId,
@@ -119,8 +159,12 @@ async function closeChannelCooperative(channelId) {
     const channel = await mongo_1.ChannelModel.findOne({ channelId }).lean();
     if (!channel)
         throw new Error('Channel not found');
-    if (channel.status !== 'OPEN')
-        throw new Error('Already closing/closed');
+    if (channel.status !== 'OPEN') {
+        // Idempotent: return current settled state without error
+        const spent = BigInt(channel.spentWei || '0');
+        const vaultId = BigInt(channel.streamerVaultId);
+        return { ok: true, channelId, deposited: spent.toString(), vaultId: vaultId.toString(), depositTxHash: channel.closeTxHash || null, alreadyClosed: true };
+    }
     // Set status to CLOSING during settlement
     await mongo_1.ChannelModel.updateOne({ channelId }, { $set: { status: 'CLOSING' } });
     const spent = BigInt(channel.spentWei || '0');
@@ -142,6 +186,6 @@ async function closeChannelCooperative(channelId) {
         }
     }
     await mongo_1.ChannelModel.updateOne({ channelId }, { $set: { status: 'CLOSED', closeTxHash: depositTx } });
-    return { ok: true, channelId, deposited: spent.toString(), vaultId: vaultId.toString(), depositTxHash: depositTx };
+    return { ok: true, channelId, deposited: spent.toString(), vaultId: vaultId.toString(), depositTxHash: depositTx, closeStatus: 'CLOSED' };
 }
 //# sourceMappingURL=channel.service.js.map

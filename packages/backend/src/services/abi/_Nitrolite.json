@@ -1,0 +1,4 @@
+{
+  "note": "Renamed from Nitrolite.json to avoid runtime import confusion; use Nitrolite.ts instead.",
+  "abi": []
+}
