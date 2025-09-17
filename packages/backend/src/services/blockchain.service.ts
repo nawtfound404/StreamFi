@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import { env } from '../config/environment';
 import { NftTokenModel, connectMongo } from '../lib/mongo';
 import { logger } from '../utils/logger';
+// Import without extension so the built JS can require './abi/Nitrolite.js' at runtime inside the container
 import NitroliteABI from './abi/Nitrolite';
 
 class BlockchainService {
@@ -212,6 +213,24 @@ class BlockchainService {
     const receipt = await tx.wait(1);
     logger.info(`Deposit tx confirmed: ${tx.hash}`);
     return receipt.transactionHash;
+  }
+
+  /** Relay a withdrawWithSignature for a creator vault to the receiver. */
+  public async relayWithdrawWithSignature(vaultId: bigint | number | string, receiver: string, amountWei: bigint | number | string, signature: string): Promise<string> {
+    if (!this.adminWallet) {
+      if (process.env.NODE_ENV !== 'production') {
+        const mock = ethers.keccak256(ethers.toUtf8Bytes(`mock-withdraw:${vaultId}:${receiver}:${String(amountWei)}:${Date.now()}`));
+        logger.warn({ vaultId: String(vaultId), receiver, amountWei: String(amountWei), tx: mock }, 'Dev mode: skipping on-chain withdraw, returning mock tx');
+        return mock;
+      }
+      throw new Error('Admin wallet not configured');
+    }
+    const id = BigInt(vaultId);
+    const amt = BigInt(amountWei);
+    logger.info({ id: id.toString(), receiver, amount: ethers.formatEther(amt) }, 'Relaying withdrawWithSignature');
+    const tx = await (this.registryContract as any).withdrawWithSignature(id, receiver, amt, signature);
+    const rc = await tx.wait(1);
+    return rc.transactionHash;
   }
 }
 

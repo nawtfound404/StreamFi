@@ -1,4 +1,6 @@
 import { api, API_BASE } from '@/lib/api';
+import { createWalletClient, createPublicClient, custom, http, type Address, keccak256, toHex, getAddress } from 'viem';
+import { sepolia } from 'viem/chains';
 
 interface OpenChannelResponse {
   channelId: string;
@@ -42,9 +44,52 @@ export const channels = {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(csrf ? { 'x-csrf-token': csrf } : {}),
     };
-    const body: any = { streamId, depositWei: depositWei.toString(), ...(addr ? { viewer: addr } : {}) };
-  const r = await fetch(`${API_BASE}/channels/open`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(`open failed: ${r.status} ${await r.text()}`);
+    // Attempt viewer-led on-chain open when wallet is present and feature flag enabled
+    let viewerTxHash: string | undefined;
+    const wantOnchain = (process.env.NEXT_PUBLIC_ONCHAIN_OPEN ?? 'true').toLowerCase() === 'true';
+    if (addr && wantOnchain && typeof window !== 'undefined' && (window as any).ethereum) {
+      try {
+        // Fetch init to get contract, chainId, vaultId
+        const init = await channels.init(streamId);
+        const chainId = Number(init.chainId);
+        // Ensure chain matches
+        const current = await (window as any).ethereum.request({ method: 'eth_chainId' });
+        const currentId = typeof current === 'string' ? parseInt(current, 16) : Number(current);
+        if (currentId !== chainId) {
+          try { await (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x' + chainId.toString(16) }] }); }
+          catch (_) { /* ignore; user may switch manually */ }
+        }
+        const wallet = createWalletClient({ chain: sepolia, transport: custom((window as any).ethereum) });
+        const pub = createPublicClient({ chain: sepolia, transport: http() });
+        const accounts = await wallet.getAddresses();
+        const viewer = (accounts?.[0] ? getAddress(accounts[0] as Address) : getAddress(addr as Address)) as Address;
+        const cmAbi = [
+          { type: 'function', name: 'openChannel', stateMutability: 'payable', inputs: [
+            { name: 'viewer', type: 'address' },
+            { name: 'streamIdHash', type: 'bytes32' },
+            { name: 'vaultId', type: 'uint256' }
+          ], outputs: [ { name: 'channelId', type: 'bytes32' } ] },
+        ] as const;
+        const streamIdHash = keccak256(toHex(streamId));
+        const txHash = await wallet.writeContract({
+          account: viewer,
+          address: init.channelContract as Address,
+          abi: cmAbi,
+          functionName: 'openChannel',
+          args: [viewer, streamIdHash, BigInt(init.vaultId)],
+          value: depositWei,
+        });
+        // Wait 1 confirmation to avoid race on backend validation
+        const rc = await pub.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
+        if (rc.status === 'success') viewerTxHash = txHash;
+      } catch (e) {
+        // Fall back to server-funded open if viewer tx fails
+        // console.warn('viewer on-chain open failed; falling back', e);
+      }
+    }
+    const body: any = { streamId, depositWei: depositWei.toString(), ...(addr ? { viewer: addr } : {}), ...(viewerTxHash ? { viewerTxHash } : {}) };
+    const r = await fetch(`${API_BASE}/channels/open`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(`open failed: ${r.status} ${await r.text()}`);
     return r.json();
   },
   async get(channelId: string) {

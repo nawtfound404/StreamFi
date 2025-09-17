@@ -9,6 +9,9 @@ const environment_1 = require("../../config/environment");
 const crypto_1 = __importDefault(require("crypto"));
 const mongoose_1 = require("mongoose");
 const socket_1 = require("../../lib/socket");
+const mongo_2 = require("../../lib/mongo");
+const channel_service_1 = require("../../services/channel.service");
+const yellow_service_1 = require("../../services/yellow.service");
 const getIngest = async (req, res) => {
     // Issue or reuse a stream key for the authenticated streamer
     const userId = req.user?.id;
@@ -19,8 +22,12 @@ const getIngest = async (req, res) => {
     const user = await mongo_1.UserModel.findById(userId).lean();
     if (!user || user.banned)
         return res.status(403).json({ message: 'Account banned' });
-    // Reuse existing active stream or create one
-    let stream = await mongo_1.StreamModel.findOne({ streamerId: new mongoose_1.Types.ObjectId(userId) }).lean();
+    const forceNew = String(req.query.new || '').trim() === '1';
+    // Reuse existing active stream or create one (allow forced creation via ?new=1)
+    let stream = null;
+    if (!forceNew) {
+        stream = await mongo_1.StreamModel.findOne({ streamerId: new mongoose_1.Types.ObjectId(userId) }).lean();
+    }
     if (!stream) {
         const created = await mongo_1.StreamModel.create({ title: 'My Stream', streamerId: new mongoose_1.Types.ObjectId(userId), status: 'IDLE' });
         stream = created.toObject();
@@ -120,7 +127,33 @@ const stopStream = async (req, res) => {
         streamDoc.set({ status: 'IDLE', endedAt: new Date() });
         await streamDoc.save();
         (0, socket_1.emitToStreamRooms)({ id: String(streamDoc._id), key: streamDoc.streamKey }, 'stream_status', { status: 'IDLE' });
-        return res.json({ ok: true, status: 'IDLE' });
+        // Auto-close all channels for this stream (settle microtransactions to creator vault)
+        try {
+            const sid = String(streamDoc._id);
+            const openChannels = await mongo_2.ChannelModel.find({ streamId: sid, status: { $in: ['OPEN', 'CLOSING'] } }).lean();
+            let closed = 0;
+            for (const ch of openChannels) {
+                try {
+                    // Cooperative close (includes deposit to vault and marks CLOSED)
+                    await (0, channel_service_1.closeChannelCooperative)(ch.channelId);
+                    closed++;
+                    // If the channel was opened on-chain (openTxHash present), attempt on-chain close as well
+                    if (ch.openTxHash) {
+                        const spent = BigInt(ch.spentWei || '0');
+                        try {
+                            await yellow_service_1.yellowService.closeChannel(ch.channelId, spent);
+                        }
+                        catch { /* non-fatal in stop */ }
+                    }
+                }
+                catch { /* continue with next channel */ }
+            }
+            return res.json({ ok: true, status: 'IDLE', channelsClosed: closed });
+        }
+        catch {
+            // If settlement fails, still return success for stopping stream
+            return res.json({ ok: true, status: 'IDLE', channelsClosed: 0 });
+        }
     }
     catch {
         return res.status(500).json({ message: 'Failed to stop stream' });

@@ -7,6 +7,7 @@ exports.yellowService = void 0;
 const ethers_1 = require("ethers");
 const environment_1 = require("../config/environment");
 const logger_1 = require("../utils/logger");
+// Import extensionless so runtime resolves dist/services/abi/Nitrolite.js
 const Nitrolite_1 = __importDefault(require("./abi/Nitrolite"));
 const ChannelManager_json_1 = __importDefault(require("./abi/ChannelManager.json"));
 const NitroliteToken_json_1 = __importDefault(require("./abi/NitroliteToken.json"));
@@ -102,14 +103,47 @@ class YellowService {
         return this.initPromise;
     }
     isReady() { return this.ready; }
-    // On-chain open channel tx
-    async openChannel(viewer, streamId, vaultId, depositWei) {
+    // Validate a viewer-submitted openChannel transaction and ensure it matches expected args/value
+    async validateOpenTx(txHash, viewer, streamIdOrSalted, vaultId, depositWei) {
         if (!this.ready) {
             await this.init();
         }
         if (!this.ready)
             throw new Error('ChannelManager not ready. Deploy contracts and set env.');
-        const streamIdHash = ethers_1.ethers.id(streamId);
+        const tx = await this.provider.getTransaction(txHash);
+        if (!tx)
+            throw new Error('open tx not found');
+        if ((tx.to || '').toLowerCase() !== String(this.channelManager.target).toLowerCase())
+            throw new Error('tx to wrong contract');
+        if (tx.value !== depositWei)
+            throw new Error('tx value mismatch');
+        // Decode call data
+        const parsed = this.channelManager.interface.parseTransaction({ data: tx.data, value: tx.value });
+        if (!parsed || parsed.name !== 'openChannel')
+            throw new Error('not an openChannel call');
+        const [argViewer, argStreamIdHash, argVaultId] = parsed.args;
+        // streamIdOrSalted may include ":salt" suffix for forced-new channels
+        const expectedHash = ethers_1.ethers.id(streamIdOrSalted);
+        if (String(argViewer).toLowerCase() !== viewer.toLowerCase())
+            throw new Error('viewer mismatch');
+        if (String(argStreamIdHash).toLowerCase() !== expectedHash.toLowerCase())
+            throw new Error('streamId hash mismatch');
+        if (BigInt(argVaultId) !== BigInt(vaultId))
+            throw new Error('vaultId mismatch');
+        // Ensure it’s mined and successful
+        const rc = await this.provider.waitForTransaction(txHash, 1, 60_000);
+        if (!rc || Number(rc.status ?? 0) !== 1)
+            throw new Error('open tx failed');
+        return { ok: true };
+    }
+    // On-chain open channel tx
+    async openChannel(viewer, streamIdOrSalted, vaultId, depositWei) {
+        if (!this.ready) {
+            await this.init();
+        }
+        if (!this.ready)
+            throw new Error('ChannelManager not ready. Deploy contracts and set env.');
+        const streamIdHash = ethers_1.ethers.id(streamIdOrSalted);
         const tx = await this.channelManager.openChannel(viewer, streamIdHash, vaultId, { value: depositWei });
         const rcpt = await tx.wait(1);
         return { txHash: rcpt.transactionHash };
