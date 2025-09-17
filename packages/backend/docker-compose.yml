@@ -6,6 +6,8 @@ services:
       - "8000:8000"
     depends_on:
       - mongo
+    env_file:
+      - .env # Change to .env.production, .env.staging, etc. as needed
     environment:
       # Use MongoDB for StreamFi, not Postgres
       DATABASE_URL: "mongodb+srv://7317520025a_db_user:zZOYiPQvh1CDhnSE@cluster0.qywxnuo.mongodb.net/streamfi?retryWrites=true&w=majority&appName=Cluster0"
