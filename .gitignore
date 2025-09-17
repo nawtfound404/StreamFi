@@ -1,6 +1,81 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# TypeScript
+*.tsbuildinfo
+dist/
+build/
+out/
+
+# Foundry (Forge/Anvil)
+out/
+lib/
+cache/
+broadcast/
+
+# NitroLite (if it generates build artifacts)
+nitro_build/
+nitro_dist/
+.nitro/
+
+# Vercel
+.vercel
+
+# Env & Secrets
 .env
 .env.local
-.env.development
-.env.production
-deployed.json
-backend.log
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+*.log.*
+*.out
+*.pid
+*.seed
+
+# IDE & OS files
+.vscode/
+**/.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Coverage & Testing
+coverage/
+lcov-report/
+
+# Misc
+*.swp
+*.swo
+
+# Github
+.copilot/
+
+# Docker-related
+*.pid
+*.seed
+*.pid.lock
+
+# Docker build cache
+.docker/
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Docker volumes (if mounted locally)
+data/
+db_data/
+pgdata/
+redis_data/
+
+# Docker log files
+*.log
