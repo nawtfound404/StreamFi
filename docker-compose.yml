@@ -24,8 +24,12 @@ services:
   # Node Media Server
   nms:
     build:
-      context: ${MEDIA_SERVER_CONTEXT:-./media-server}
-      dockerfile: Dockerfile
+      # NOTE: Previously this used ${MEDIA_SERVER_CONTEXT:-./media-server} but the actual path in the repo
+      # is ./packages/media-server. Hardcoding prevents build failures for new contributors who
+      # don't export MEDIA_SERVER_CONTEXT. If you really need to override, edit this file or add
+      # a secondary compose override (docker-compose.override.yml).
+      context: ./packages/media-server
+      dockerfile: Dockerfilegit 
     ports:
       - "1935:1935"   # RTMP ingest
       - "8081:8080"   # HLS HTTP (external:internal)

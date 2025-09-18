@@ -65,6 +65,19 @@ Services
 - Backend: http://localhost:8000
 - Frontend: http://localhost:3000
 - MongoDB: mongodb://user:password@localhost:27017/streamfi?authSource=admin
+- Media Server (RTMP/HLS origin): exposed on 1935 (RTMP) and 8081 (HLS)
+
+### Media Server build context note
+The compose file now hardcodes the media server build context to `./packages/media-server` (previously it used an env var fallback `${MEDIA_SERVER_CONTEXT:-./media-server}` which caused build failures for fresh clones). If you need to point at a different implementation, create a `docker-compose.override.yml` with:
+
+```yaml
+services:
+	nms:
+		build:
+			context: ./path-to-your-alt-media-server
+```
+
+This keeps the default path stable for all contributors.
 
 ## Run (local dev)
 
