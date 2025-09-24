@@ -1,5 +1,6 @@
 # backend/.dockerignore
-node_modules
+# Allow using host node_modules as a fallback during Docker builds
+!node_modules
 npm-debug.log
 dist
 .git
