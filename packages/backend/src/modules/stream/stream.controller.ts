@@ -74,8 +74,10 @@ export const getHls = async (req: Request, res: Response) => {
 	const stream = byId || (await StreamModel.findOne({ streamKey: idOrKey }).lean());
 	if (!stream) return res.status(404).json({ message: 'Stream not found' });
 	const keyForUrl = (stream as any)?.streamKey ?? idOrKey;
-	const path = env.nms.hlsTemplate.replace('{key}', keyForUrl);
-	const url = `${env.nms.hlsBase}${path}`;
+	// Always build an externally-reachable URL under this host so nginx can proxy /live -> nms
+	const path = `/live/${encodeURIComponent(keyForUrl)}/index.m3u8`;
+	const origin = `${req.protocol}://${req.get('host')}`;
+	const url = `${origin}${path}`;
 	if (req.query.redirect) return res.redirect(302, url);
 	return res.status(200).json({ hlsUrl: url });
 };

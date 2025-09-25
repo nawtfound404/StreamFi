@@ -1,6 +1,5 @@
 import { api, API_BASE } from '@/lib/api';
-import { createWalletClient, createPublicClient, custom, http, type Address, keccak256, toHex, getAddress } from 'viem';
-import { sepolia } from 'viem/chains';
+import { createWalletClient, createPublicClient, custom, http, type Address, keccak256, toHex, getAddress, defineChain } from 'viem';
 
 interface OpenChannelResponse {
   channelId: string;
@@ -59,8 +58,11 @@ export const channels = {
           try { await (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x' + chainId.toString(16) }] }); }
           catch (_) { /* ignore; user may switch manually */ }
         }
-        const wallet = createWalletClient({ chain: sepolia, transport: custom((window as any).ethereum) });
-        const pub = createPublicClient({ chain: sepolia, transport: http() });
+        // Build a dynamic viem chain descriptor to avoid hard-coding sepolia
+        const dynamicChain = defineChain({ id: chainId, name: `chain-${chainId}` as any, nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: [''] } }, formatters: undefined });
+        const wallet = createWalletClient({ chain: dynamicChain, transport: custom((window as any).ethereum) });
+        // Prefer the wallet provider for reading too (avoids CORS on http RPC)
+        const pub = createPublicClient({ chain: dynamicChain, transport: custom((window as any).ethereum) });
         const accounts = await wallet.getAddresses();
         const viewer = (accounts?.[0] ? getAddress(accounts[0] as Address) : getAddress(addr as Address)) as Address;
         const cmAbi = [
@@ -73,7 +75,7 @@ export const channels = {
         const streamIdHash = keccak256(toHex(streamId));
         const txHash = await wallet.writeContract({
           account: viewer,
-          address: init.channelContract as Address,
+          address: (init.channelContract || init.contract) as Address,
           abi: cmAbi,
           functionName: 'openChannel',
           args: [viewer, streamIdHash, BigInt(init.vaultId)],

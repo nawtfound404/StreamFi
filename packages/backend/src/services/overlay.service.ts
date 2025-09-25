@@ -18,16 +18,31 @@ export const onSocketConnection = (io: Server) => {
   io.of("/").use(async (socket, next) => {
     try {
       const token = (socket.handshake.auth?.token || socket.handshake.headers['authorization']?.toString()?.replace('Bearer ', '') || socket.handshake.query.token) as string | undefined;
-      if (!token) return next(new Error('unauthorized'));
-  const decoded = jwt.verify(token, env.jwt.secret) as { id: string; role?: UserRole };
-  await connectMongo();
-  const user = await UserModel.findById(decoded.id).lean();
-  if (!user || (user as any).banned) return next(new Error('forbidden'));
-      (socket as any).userId = String((user as any)._id);
-  (socket as any).role = (user as any).role;
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, env.jwt.secret) as { id: string; role?: UserRole };
+          await connectMongo();
+          const user = await UserModel.findById(decoded.id).lean();
+          if (!user || (user as any).banned) return next(new Error('forbidden'));
+          (socket as any).userId = String((user as any)._id);
+          (socket as any).role = (user as any).role;
+          return next();
+        } catch {
+          // If token invalid, fall back to anonymous viewer
+          (socket as any).userId = `anon:${socket.id}`;
+          (socket as any).role = 'VIEWER';
+          return next();
+        }
+      }
+      // No token provided: allow anonymous viewer with limited capabilities
+      (socket as any).userId = `anon:${socket.id}`;
+      (socket as any).role = 'VIEWER';
       return next();
-    } catch (e) {
-      return next(new Error('unauthorized'));
+    } catch {
+      // As a safety, allow anonymous if unexpected error to avoid blocking viewers
+      (socket as any).userId = `anon:${socket.id}`;
+      (socket as any).role = 'VIEWER';
+      return next();
     }
   }).on('connection', async (socket: Socket) => {
     logger.info(`New client connected: ${socket.id}`);
@@ -113,7 +128,7 @@ export const onSocketConnection = (io: Server) => {
       if (!room || !payload.text?.trim()) return;
       io.to(room).emit('chat_message', {
         id: Date.now().toString(),
-        user: payload.user || 'anon',
+        user: payload.user || ((socket as any).userId?.toString?.().slice(0, 6) || 'anon'),
         text: payload.text,
         at: Date.now(),
       });

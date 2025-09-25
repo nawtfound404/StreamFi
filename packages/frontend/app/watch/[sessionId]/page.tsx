@@ -6,6 +6,7 @@ import { connectWallet, getAccounts } from "@/lib/wallet";
 import { io, Socket } from "socket.io-client";
 import Hls from "hls.js";
 import { hlsUrlFor } from "@/lib/config";
+import { realtime } from "@/modules/realtime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,10 +88,10 @@ export default function WatchPage() {
     }
     // Socket reactions
     try {
-      // Always connect via frontend origin; Next.js rewrites proxy to backend
-      const wsUrl = window.location.origin.replace(/^http/, "ws");
-      const token = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("streamfi-auth") || "{}").state?.session?.token : undefined;
-  const socket = io(wsUrl, { transports: ["websocket"], query: { streamId: String(streamId ?? '') }, auth: { token } });
+    // Always connect via same-origin; Next.js rewrites proxy to backend
+    const { url: wsUrl } = realtime.connectChat(String(streamId ?? ''));
+    const token = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("streamfi-auth") || "{}").state?.session?.token : undefined;
+    const socket = io(wsUrl, { transports: ["websocket"], query: { streamId: String(streamId ?? '') }, auth: token ? { token } : undefined });
       socketRef.current = socket;
       socket.on("connect", () => setLog((l) => ["[ws] connected", ...l]));
       socket.on("disconnect", () => setLog((l) => ["[ws] disconnected", ...l]));
@@ -241,19 +242,24 @@ export default function WatchPage() {
     if (!t) return;
     setText("");
     try {
+      // If logged in, prefer REST API (persists to DB). Otherwise, emit via socket for ephemeral chat.
       const token = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("streamfi-auth") || "{}").state?.session?.token : undefined;
-  const csrfRes = await fetch(`${API_BASE}/csrf`, { credentials: "include" });
-      const csrfToken = csrfRes.ok ? (await csrfRes.json()).csrfToken as string : undefined;
-  const res = await fetch(`${API_BASE}/chat/${encodeURIComponent(String(streamId ?? ''))}/messages`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(csrfToken ? { "x-csrf-token": csrfToken } : {}) },
-        body: JSON.stringify({ text: t }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as { item: { _id: string; userId: string; text: string; createdAt: string } };
-      setChat((c) => [...c, { id: data.item._id, user: data.item.userId, text: data.item.text, at: new Date(data.item.createdAt).getTime() }]);
-  } catch {
+      if (token) {
+        const csrfRes = await fetch(`${API_BASE}/csrf`, { credentials: "include" });
+        const csrfToken = csrfRes.ok ? (await csrfRes.json()).csrfToken as string : undefined;
+        const res = await fetch(`${API_BASE}/chat/${encodeURIComponent(String(streamId ?? ''))}/messages`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(csrfToken ? { "x-csrf-token": csrfToken } : {}) },
+          body: JSON.stringify({ text: t }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = (await res.json()) as { item: { _id: string; userId: string; text: string; createdAt: string } };
+        setChat((c) => [...c, { id: data.item._id, user: data.item.userId, text: data.item.text, at: new Date(data.item.createdAt).getTime() }]);
+      } else {
+        socketRef.current?.emit('chat_message', { streamId: String(streamId ?? ''), text: t });
+      }
+    } catch {
       setLog((l) => ["Chat send failed", ...l]);
     }
   }

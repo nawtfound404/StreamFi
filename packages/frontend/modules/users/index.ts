@@ -60,9 +60,14 @@ export const users = {
     return get<{ items: LiveStream[] }>(`/users/streams/live`);
   },
   async joinStream(streamId: string) {
+    // Only call backend when authenticated; otherwise no-op for anonymous viewers
+    const token = bearer();
+    if (!token) return { ok: true } as any;
     return post<{ ok: true }>(`/users/streams/${encodeURIComponent(streamId)}/join`, {});
   },
   async leaveStream(streamId: string) {
+    const token = bearer();
+    if (!token) return { ok: true } as any;
     return post<{ ok: true }>(`/users/streams/${encodeURIComponent(streamId)}/leave`, {});
   },
   async mute(userId: string) {
